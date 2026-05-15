@@ -1,9 +1,12 @@
+"use client";
+
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, ArrowLeft, BarChart3, ClipboardCheck, Gauge, LineChart, Percent, RefreshCw, Sparkles, Waves } from "lucide-react";
+import { Activity, ArrowLeft, BarChart3, ClipboardCheck, Gauge, LineChart, Percent, RefreshCw, Waves } from "lucide-react";
 import { CopyReportButton } from "@/components/CopyReportButton";
 import { MetricCard } from "@/components/MetricCard";
 import { RiskBadge } from "@/components/RiskBadge";
-import { getRiskReminders, levelText } from "@/lib/reportText";
+import { buildReportCopy, getRiskReminders, levelText } from "@/lib/reportText";
 import type { RiskReport } from "@/lib/types";
 
 export function ReportView({
@@ -17,49 +20,51 @@ export function ReportView({
   const reminders = getRiskReminders(report);
   const publicDataHelp = data.source === "api" ? "来自公开行情接口，可能存在延迟。" : "示例数据，仅用于功能演示，非实时行情。";
   const estimatedDataHelp = "演示算法估算，后续接入更多公开数据。";
+  const checklistItems = useMemo(() => normalizeChecklist(evaluation.checklist), [evaluation.checklist]);
+  const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
+  const completedCount = checklistItems.filter((item) => checkedItems[item]).length;
+  const totalCount = checklistItems.length;
+  const uncheckedCount = totalCount - completedCount;
+  const summary = buildPlainSummary(report);
+  const riskInterpretation = buildRiskInterpretation(report);
+  const selfCheckWarning = completedCount < 4 ? "你还有多个关键问题未确认，建议先完成风险自查。" : "";
+  const copyText = buildReportCopy({
+    completedCount,
+    report,
+    riskInterpretation: selfCheckWarning ? `${riskInterpretation}\n${selfCheckWarning}` : riskInterpretation,
+    summary,
+    totalCount
+  });
   const metricCards = [
     {
       label: "当前价格",
       value: `$${formatPrice(data.price)}`,
-      help: publicDataHelp,
+      help: "这是当前公开行情价格，可能存在延迟。",
       icon: LineChart
     },
     {
       label: "24小时涨跌幅",
       value: formatPercentText(data.change24hText),
-      help: publicDataHelp,
+      help: explainChange(data.change24h),
       icon: Percent
     },
     {
       label: "24小时成交量",
       value: `${formatVolume(data.volume24h)} ${data.baseAsset}`,
-      help: publicDataHelp,
+      help: explainActivity(data.quoteVolume24h),
       icon: BarChart3
     },
     {
       label: "24小时成交额",
       value: `${formatVolume(data.quoteVolume24h)} ${data.quoteAsset}${data.quoteVolumeEstimated ? "（估算）" : ""}`,
-      help: data.quoteVolumeEstimated ? `${publicDataHelp} 该成交额由成交量和当前价格估算。` : publicDataHelp,
+      help: data.quoteVolumeEstimated ? `${explainActivity(data.quoteVolume24h)} 该成交额由成交量和当前价格估算。` : explainActivity(data.quoteVolume24h),
       icon: BarChart3
-    },
-    {
-      label: "资金费率",
-      value: `${data.fundingRate.toFixed(3)}%`,
-      help: estimatedDataHelp,
-      icon: Gauge
-    },
-    {
-      label: "持仓变化",
-      value: formatPercent(data.openInterestChange),
-      help: estimatedDataHelp,
-      icon: Activity
-    },
-    {
-      label: "短周期波动强度",
-      value: data.volatility.toFixed(1),
-      help: estimatedDataHelp,
-      icon: Waves
     }
+  ];
+  const estimatedCards = [
+    { label: "资金费率", value: `${data.fundingRate.toFixed(3)}%`, icon: Gauge },
+    { label: "持仓变化", value: formatPercent(data.openInterestChange), icon: Activity },
+    { label: "短周期波动强度", value: data.volatility.toFixed(1), icon: Waves }
   ];
 
   if (report.error) {
@@ -114,14 +119,10 @@ export function ReportView({
           )}
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <CopyReportButton report={report} />
+          <CopyReportButton text={copyText} />
           <Link href={`/report?symbol=${data.symbol}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-200 hover:border-aqua">
             <RefreshCw size={17} />
             刷新数据
-          </Link>
-          <Link href="/examples" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-aqua/45 bg-aqua/10 px-4 text-sm font-semibold text-aqua hover:bg-aqua/15">
-            <Sparkles size={17} />
-            生成示例报告
           </Link>
           {showBackLink && (
             <Link href="/" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm text-slate-200 hover:border-aqua">
@@ -140,9 +141,12 @@ export function ReportView({
             <div className="mt-3">
               <RiskBadge level={evaluation.level} />
             </div>
-            <p className="mt-3 text-xs leading-5 text-slate-400">{estimatedDataHelp}</p>
+            <p className="mt-3 max-w-xs text-sm leading-6 text-slate-200">{summary}</p>
           </div>
-          <p className="max-w-2xl text-base leading-7 text-slate-200 sm:text-lg">{evaluation.reason}</p>
+          <div className="max-w-2xl text-base leading-7 text-slate-200 sm:text-lg">
+            <p>{riskInterpretation}</p>
+            {selfCheckWarning && <p className="mt-3 text-gold">{selfCheckWarning}</p>}
+          </div>
         </div>
       </section>
 
@@ -184,7 +188,7 @@ export function ReportView({
         <section className="rounded-lg border border-border bg-surface/85 p-5">
           <h2 className="text-xl font-semibold text-white">风险解释</h2>
           <div className="mt-4 space-y-3 text-sm leading-7 text-slate-300">
-            {evaluation.explainList.map((item) => (
+            {[...evaluation.explainList, ...(selfCheckWarning ? [selfCheckWarning] : [])].map((item) => (
               <p key={item}>{item}</p>
             ))}
           </div>
@@ -195,16 +199,45 @@ export function ReportView({
             <ClipboardCheck className="text-aqua" size={22} />
             开单前自查清单
           </h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-md border border-aqua/35 bg-aqua/10 p-3 text-sm text-aqua">
+              自查完成度：{completedCount}/{totalCount}
+            </div>
+            <div className="rounded-md border border-gold/35 bg-gold/10 p-3 text-sm text-gold">
+              未确认风险点 {uncheckedCount} 个
+            </div>
+          </div>
           <div className="mt-4 space-y-3">
-            {evaluation.checklist.map((item) => (
+            {checklistItems.map((item) => (
               <label key={item} className="flex gap-3 rounded-md border border-border bg-bg/70 p-3 text-sm leading-6 text-slate-200">
-                <input type="checkbox" className="mt-1 h-4 w-4 shrink-0 rounded border-border accent-aqua" />
+                <input
+                  type="checkbox"
+                  checked={Boolean(checkedItems[item])}
+                  onChange={(event) => setCheckedItems((current) => ({ ...current, [item]: event.target.checked }))}
+                  className="mt-1 h-4 w-4 shrink-0 rounded border-border accent-aqua"
+                />
                 <span>{item}</span>
               </label>
             ))}
           </div>
         </section>
       </div>
+
+      <section className="mt-5 rounded-lg border border-border bg-surface/70 p-5">
+        <h2 className="text-lg font-semibold text-white">演示算法估算</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-400">以下为演示算法估算，后续接入更多公开数据。</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {estimatedCards.map(({ label, value, icon: Icon }) => (
+            <div key={label} className="rounded-md border border-border bg-bg/60 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-slate-400">{label}</p>
+                <Icon className="text-aqua" size={18} />
+              </div>
+              <p className="mt-2 text-lg font-semibold text-white">{value}</p>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
@@ -250,4 +283,56 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString("zh-CN", {
     hour12: false
   });
+}
+
+function normalizeChecklist(items: string[]) {
+  const defaults = [
+    "我是否写下了这次开单的理由？",
+    "我是否知道自己最多能承受多少亏损？",
+    "我是否检查了更高周期走势和近期公开信息？",
+    "我是否确认当前不是被焦虑、兴奋或不甘心推动？",
+    "我是否准备好把这次结果记录到学习记录里？",
+    "我是否确认这次操作符合自己的计划？"
+  ];
+  return [...items, ...defaults].filter((item, index, list) => list.indexOf(item) === index).slice(0, 6);
+}
+
+function buildPlainSummary(report: RiskReport) {
+  const changeAbs = Math.abs(report.data.change24h ?? 0);
+  const activity = getActivityLevel(report.data.quoteVolume24h);
+
+  if (changeAbs > 8) {
+    return `当前短期波动较强，成交活跃度${activity}，建议先完成风险自查，避免情绪化操作。`;
+  }
+
+  if (changeAbs >= 3) {
+    return `当前波动开始明显，成交活跃度${activity}，建议把风险点逐项确认后再继续。`;
+  }
+
+  return `当前波动不算极端，成交活跃度${activity}，建议先完成风险自查，避免情绪化操作。`;
+}
+
+function buildRiskInterpretation(report: RiskReport) {
+  return `当前价格为 $${formatPrice(report.data.price)}，24小时涨跌幅为 ${formatPercentText(report.data.change24hText)}，24小时成交量为 ${formatVolume(report.data.volume24h)} ${report.data.baseAsset}，24小时成交额为 ${formatVolume(report.data.quoteVolume24h)} ${report.data.quoteAsset}${report.data.quoteVolumeEstimated ? "（估算）" : ""}。这些数据只用于观察当前风险环境，不代表任何操作方向。`;
+}
+
+function explainChange(value: number | null) {
+  if (value === null) return "该数据源暂未返回完整涨跌字段。";
+  const abs = Math.abs(value);
+  if (abs < 3) return "短期波动不算极端。";
+  if (abs <= 8) return "波动开始明显，需要认真做风险自查。";
+  return "短期波动较强，需要谨慎看待。";
+}
+
+function explainActivity(quoteVolume: number) {
+  const level = getActivityLevel(quoteVolume);
+  if (level === "较低") return "成交额较低，流动性可能不足。";
+  if (level === "中等") return "成交额中等，活跃度一般。";
+  return "成交额较高，市场关注度较高。";
+}
+
+function getActivityLevel(quoteVolume: number) {
+  if (quoteVolume < 1000000) return "较低";
+  if (quoteVolume < 50000000) return "中等";
+  return "较高";
 }

@@ -33,36 +33,45 @@ export function getRiskReminders(report: RiskReport) {
   return reminders.slice(0, 3);
 }
 
-export function buildReportCopy(report: RiskReport) {
-  const reminders = getRiskReminders(report);
+export function buildReportCopy({
+  completedCount = 0,
+  report,
+  riskInterpretation,
+  summary,
+  totalCount = 6
+}: {
+  completedCount?: number;
+  report: RiskReport;
+  riskInterpretation: string;
+  summary: string;
+  totalCount?: number;
+}) {
+  const uncheckedCount = Math.max(totalCount - completedCount, 0);
 
   return [
     `【交易对】${report.data.symbol}`,
-    `【风险等级】${levelText(report.evaluation.level)}`,
+    `【当前价格】$${formatPrice(report.data.price)}`,
+    `【24小时涨跌幅】${formatPercentText(report.data.change24hText)}`,
+    `【24小时成交量】${formatVolume(report.data.volume24h)} ${report.data.baseAsset}`,
+    `【24小时成交额】${formatVolume(report.data.quoteVolume24h)} ${report.data.quoteAsset}${report.data.quoteVolumeEstimated ? "（估算）" : ""}`,
     `【数据来源】${report.data.dataSource}`,
-    "【真实公开行情数据】",
-    `当前价格：$${formatPrice(report.data.price)}`,
-    `24小时涨跌幅：${formatPercentText(report.data.change24hText)}`,
-    `24小时成交量：${formatVolume(report.data.volume24h)} ${report.data.baseAsset}`,
-    `24小时成交额：${formatVolume(report.data.quoteVolume24h)} ${report.data.quoteAsset}${report.data.quoteVolumeEstimated ? "（估算）" : ""}`,
-    "【演示算法估算】",
-    `资金费率：${report.data.fundingRate.toFixed(3)}%`,
-    `持仓变化：${formatSignedPercent(report.data.openInterestChange)}`,
-    `短周期波动强度：${report.data.volatility.toFixed(1)}`,
-    "【主要提醒】",
-    ...reminders.map((item, index) => `${index + 1}. ${item}`),
+    `【风险等级】${levelText(report.evaluation.level)}`,
+    `【一句话总结】${summary}`,
     "",
-    "说明：本内容仅作公开数据复盘和风险提醒，不构成投资建议。"
+    "【风险解读】",
+    riskInterpretation,
+    "",
+    "【自查完成度】",
+    `已完成：${completedCount}/${totalCount}`,
+    `未确认风险点：${uncheckedCount} 个`,
+    "",
+    "说明：本报告仅作公开数据复盘和风险提醒，不提供具体操作建议，不构成投资建议。"
   ].join("\n");
 }
 
 function formatPercentText(value: string | null) {
   if (value === null) return "暂无数据";
   return `${Number(value) > 0 ? "+" : ""}${value}%`;
-}
-
-function formatSignedPercent(value: number) {
-  return `${value > 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
 function formatVolume(value: number) {

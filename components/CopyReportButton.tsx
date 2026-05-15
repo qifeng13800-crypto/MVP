@@ -2,25 +2,23 @@
 
 import { useMemo, useState } from "react";
 import { Clipboard, Check } from "lucide-react";
-import { buildReportCopy } from "@/lib/reportText";
-import type { RiskReport } from "@/lib/types";
 
-export function CopyReportButton({ report }: { report: RiskReport }) {
+export function CopyReportButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
-  const text = useMemo(() => buildReportCopy(report), [report]);
+  const copyText = useMemo(() => text, [text]);
 
   async function handleCopy() {
     try {
       if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
+        await navigator.clipboard.writeText(copyText);
       } else {
-        fallbackCopy(text);
+        fallbackCopy(copyText);
       }
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
       try {
-        fallbackCopy(text);
+        fallbackCopy(copyText);
         setCopied(true);
         window.setTimeout(() => setCopied(false), 1800);
       } catch {
