@@ -143,6 +143,9 @@ npm install
 [build]
   command = "npm run build"
   publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
 ```
 
 如果 Netlify 页面要求手动填写：
