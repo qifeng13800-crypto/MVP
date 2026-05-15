@@ -1,12 +1,15 @@
 export type RiskLevel = "low" | "medium" | "high";
 
 export type MarketData = {
+  baseAsset: string;
   symbol: string;
+  quoteAsset: string;
   price: number;
   change24h: number | null;
   change24hText: string | null;
   volume24h: number;
   quoteVolume24h: number;
+  quoteVolumeEstimated?: boolean;
   volumeChange: number;
   fundingRate: number;
   openInterestChange: number;

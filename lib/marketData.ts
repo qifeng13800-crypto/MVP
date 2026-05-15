@@ -18,7 +18,9 @@ const coinGeckoIds: Record<string, string> = {
 
 const exampleData: Record<string, Omit<MarketData, "updatedAt" | "source" | "dataSource" | "sourceNote">> = {
   BTCUSDT: {
+    baseAsset: "BTC",
     symbol: "BTCUSDT",
+    quoteAsset: "USDT",
     price: 68420,
     change24h: 2.8,
     change24hText: "2.80",
@@ -30,7 +32,9 @@ const exampleData: Record<string, Omit<MarketData, "updatedAt" | "source" | "dat
     volatility: 6.2
   },
   ETHUSDT: {
+    baseAsset: "ETH",
     symbol: "ETHUSDT",
+    quoteAsset: "USDT",
     price: 3568,
     change24h: 1.2,
     change24hText: "1.20",
@@ -42,7 +46,9 @@ const exampleData: Record<string, Omit<MarketData, "updatedAt" | "source" | "dat
     volatility: 3.4
   },
   SOLUSDT: {
+    baseAsset: "SOL",
     symbol: "SOLUSDT",
+    quoteAsset: "USDT",
     price: 152.7,
     change24h: 4.6,
     change24hText: "4.60",
@@ -54,7 +60,9 @@ const exampleData: Record<string, Omit<MarketData, "updatedAt" | "source" | "dat
     volatility: 6.1
   },
   MEMEUSDT: {
+    baseAsset: "MEME",
     symbol: "MEMEUSDT",
+    quoteAsset: "USDT",
     price: 0.0028,
     change24h: 12.6,
     change24hText: "12.60",
@@ -68,9 +76,9 @@ const exampleData: Record<string, Omit<MarketData, "updatedAt" | "source" | "dat
 };
 
 type BinanceTicker24h = {
+  openPrice: string;
   symbol: string;
   lastPrice: string;
-  priceChangePercent: string;
   volume: string;
   quoteVolume: string;
   closeTime: number;
@@ -90,9 +98,9 @@ type OkxTickerResponse = {
 type MexcTicker24h = {
   symbol: string;
   lastPrice: string;
-  priceChangePercent: string;
+  openPrice: string;
   volume: string;
-  quoteVolume: string;
+  quoteVolume?: string;
   closeTime?: number;
 };
 
@@ -110,6 +118,10 @@ export async function getMarketData(symbolInput: string): Promise<{ data?: Marke
   } catch (error) {
     if (error instanceof InvalidSymbolError) {
       return { error: error.message || "暂未找到该交易对，请检查输入是否正确，或尝试 BTCUSDT / ETHUSDT / SOLUSDT。" };
+    }
+
+    if (error instanceof IncompleteMarketDataError) {
+      return { error: "该数据源暂未返回完整行情字段，请更换交易对或稍后刷新。" };
     }
 
     return { error: "暂时无法获取该交易对的公开行情数据，请稍后刷新或更换交易对。" };
@@ -176,7 +188,7 @@ async function fetchBinanceMarketData(symbol: string): Promise<MarketData> {
   return buildMarketDataFromExchangeTicker({
     symbol: ticker.symbol,
     price: ticker.lastPrice,
-    change24h: ticker.priceChangePercent,
+    openPrice: ticker.openPrice,
     volume24h: ticker.volume,
     quoteVolume24h: ticker.quoteVolume,
     updatedAt: ticker.closeTime ? new Date(ticker.closeTime).toISOString() : new Date().toISOString(),
@@ -202,13 +214,12 @@ async function fetchOkxMarketData(symbol: string): Promise<MarketData> {
 
   const price = Number(ticker.last);
   const open24h = Number(ticker.open24h);
-  const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : null;
   const timestamp = Number(ticker.ts);
 
   return buildMarketData({
     symbol,
     price,
-    change24h,
+    openPrice: open24h,
     volume24h: Number(ticker.vol24h),
     quoteVolume24h: Number(ticker.volCcy24h),
     updatedAt: Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : new Date().toISOString(),
@@ -231,12 +242,18 @@ async function fetchMexcMarketData(symbol: string): Promise<MarketData> {
   }
 
   const ticker = (await response.json()) as MexcTicker24h;
+  const price = Number(ticker.lastPrice);
+  const volume24h = Number(ticker.volume);
+  const quoteVolume24h = Number(ticker.quoteVolume);
+  const hasQuoteVolume = ticker.quoteVolume !== undefined && ticker.quoteVolume !== "" && Number.isFinite(quoteVolume24h);
+
   return buildMarketDataFromExchangeTicker({
     symbol: ticker.symbol || symbol,
     price: ticker.lastPrice,
-    change24h: ticker.priceChangePercent,
+    openPrice: ticker.openPrice,
     volume24h: ticker.volume,
-    quoteVolume24h: ticker.quoteVolume,
+    quoteVolume24h: hasQuoteVolume ? ticker.quoteVolume as string : String(volume24h * price),
+    quoteVolumeEstimated: !hasQuoteVolume,
     updatedAt: ticker.closeTime ? new Date(ticker.closeTime).toISOString() : new Date().toISOString(),
     dataSource: "MEXC 公共行情"
   });
@@ -270,16 +287,18 @@ async function fetchCoinGeckoMarketData(symbol: string): Promise<MarketData> {
   const price = item?.usd;
   const quoteVolume24h = item?.usd_24h_vol ?? 0;
   const volume24h = price && price > 0 ? quoteVolume24h / price : 0;
+  const change24h = typeof item?.usd_24h_change === "number" ? item.usd_24h_change : null;
+  const openPrice = price && change24h !== null ? price / (1 + change24h / 100) : null;
   const updatedAt = item?.last_updated_at ? new Date(item.last_updated_at * 1000).toISOString() : new Date().toISOString();
 
-  if (!price || !Number.isFinite(price)) {
-    throw new InvalidSymbolError();
+  if (!price || !Number.isFinite(price) || openPrice === null || !Number.isFinite(openPrice)) {
+    throw new IncompleteMarketDataError();
   }
 
   return buildMarketData({
     symbol,
     price,
-    change24h: typeof item?.usd_24h_change === "number" ? item.usd_24h_change : null,
+    openPrice,
     volume24h,
     quoteVolume24h,
     updatedAt,
@@ -303,26 +322,29 @@ export function getExampleMarketData(symbolInput: string): MarketData {
 function buildMarketDataFromExchangeTicker({
   symbol,
   price,
-  change24h,
+  openPrice,
   volume24h,
   quoteVolume24h,
+  quoteVolumeEstimated,
   updatedAt,
   dataSource
 }: {
   symbol: string;
   price: string;
-  change24h: string;
+  openPrice: string;
   volume24h: string;
   quoteVolume24h: string;
+  quoteVolumeEstimated?: boolean;
   updatedAt: string;
   dataSource: MarketData["dataSource"];
 }) {
   return buildMarketData({
     symbol,
     price: Number(price),
-    change24h: parseNullableNumber(change24h),
+    openPrice: Number(openPrice),
     volume24h: Number(volume24h),
     quoteVolume24h: Number(quoteVolume24h),
+    quoteVolumeEstimated,
     updatedAt,
     dataSource
   });
@@ -331,36 +353,43 @@ function buildMarketDataFromExchangeTicker({
 function buildMarketData({
   symbol,
   price,
-  change24h,
+  openPrice,
   volume24h,
   quoteVolume24h,
+  quoteVolumeEstimated,
   updatedAt,
   dataSource,
   sourceNote
 }: {
   symbol: string;
   price: number;
-  change24h: number | null;
+  openPrice: number | null;
   volume24h: number;
   quoteVolume24h: number;
+  quoteVolumeEstimated?: boolean;
   updatedAt: string;
   dataSource: MarketData["dataSource"];
   sourceNote?: string;
 }): MarketData {
-  if (!Number.isFinite(price) || !Number.isFinite(volume24h) || !Number.isFinite(quoteVolume24h)) {
-    throw new Error("Invalid market data payload");
+  if (!Number.isFinite(price) || !Number.isFinite(volume24h) || !Number.isFinite(quoteVolume24h) || openPrice === null || !Number.isFinite(openPrice) || openPrice <= 0) {
+    throw new IncompleteMarketDataError();
   }
 
   const base = exampleData[symbol] ?? estimateDemoMetrics(symbol);
+  const resolved = resolveSymbol(symbol);
+  const change24h = ((price - openPrice) / openPrice) * 100;
 
   return {
     ...base,
+    baseAsset: resolved.baseAsset,
     symbol,
+    quoteAsset: resolved.quoteAsset,
     price,
     change24h,
     change24hText: normalizePercentNumber(change24h),
     volume24h,
     quoteVolume24h,
+    quoteVolumeEstimated,
     volumeChange: estimateVolumeChange(volume24h),
     source: "api",
     dataSource,
@@ -382,7 +411,7 @@ function buildNotFoundMessage(suggestions: string[]) {
   return "暂未找到该交易对，请检查输入是否正确，或尝试 BTCUSDT / ETHUSDT / SOLUSDT。";
 }
 
-function estimateDemoMetrics(symbol: string): Omit<MarketData, "symbol" | "price" | "change24h" | "change24hText" | "volume24h" | "quoteVolume24h" | "updatedAt" | "source" | "dataSource" | "sourceNote"> {
+function estimateDemoMetrics(symbol: string): Omit<MarketData, "baseAsset" | "symbol" | "quoteAsset" | "price" | "change24h" | "change24hText" | "volume24h" | "quoteVolume24h" | "quoteVolumeEstimated" | "updatedAt" | "source" | "dataSource" | "sourceNote"> {
   const seed = [...symbol].reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
   return {
@@ -400,15 +429,10 @@ function estimateVolumeChange(volume24h: number) {
   return 18;
 }
 
-function parseNullableNumber(value: string) {
-  if (!value) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
 function normalizePercentNumber(value: number | null) {
   if (value === null || !Number.isFinite(value)) return null;
   return value.toFixed(2);
 }
 
 export class InvalidSymbolError extends Error {}
+export class IncompleteMarketDataError extends Error {}

@@ -45,12 +45,15 @@ async function createReportFromMarketApi(symbolInput: string): Promise<RiskRepor
 function createErrorReport(symbol: string, error: string): RiskReport {
   return {
     data: {
+      baseAsset: symbol.endsWith("USDT") ? symbol.slice(0, -4) : symbol,
       symbol,
+      quoteAsset: symbol.endsWith("USDT") ? "USDT" : "",
       price: 0,
       change24h: null,
       change24hText: null,
       volume24h: 0,
       quoteVolume24h: 0,
+      quoteVolumeEstimated: false,
       volumeChange: 0,
       fundingRate: 0,
       openInterestChange: 0,

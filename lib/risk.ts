@@ -7,12 +7,15 @@ export async function createRiskReport(symbol: string): Promise<RiskReport> {
   if (!result.data) {
     return {
       data: {
+        baseAsset: symbol.trim().toUpperCase().endsWith("USDT") ? symbol.trim().toUpperCase().slice(0, -4) : symbol.trim().toUpperCase(),
         symbol: symbol.trim().toUpperCase() || "BTCUSDT",
+        quoteAsset: symbol.trim().toUpperCase().endsWith("USDT") ? "USDT" : "",
         price: 0,
         change24h: null,
         change24hText: null,
         volume24h: 0,
         quoteVolume24h: 0,
+        quoteVolumeEstimated: false,
         volumeChange: 0,
         fundingRate: 0,
         openInterestChange: 0,

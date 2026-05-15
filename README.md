@@ -92,10 +92,12 @@ npm run start
 Binance 当前使用接口字段：
 
 - `lastPrice`：当前价格
-- `priceChangePercent`：24 小时涨跌幅
+- `openPrice`：24 小时前价格
 - `volume`：24 小时成交量
 - `quoteVolume`：24 小时成交额
 - `closeTime`：数据时间
+
+24 小时涨跌幅统一用 `(lastPrice - openPrice) / openPrice * 100` 重新计算，避免不同平台统计字段口径不一致。
 
 OKX 当前使用接口字段：
 
@@ -104,6 +106,15 @@ OKX 当前使用接口字段：
 - `vol24h`：24 小时基础币成交量
 - `volCcy24h`：24 小时计价成交额
 - `ts`：数据时间
+
+MEXC 当前使用接口字段：
+
+- `lastPrice`：当前价格
+- `openPrice`：24 小时前价格
+- `volume`：24 小时成交量
+- `quoteVolume`：24 小时成交额
+
+如果 MEXC 的 `quoteVolume` 为空，会用 `volume * lastPrice` 做估算，并在页面显示“估算”。
 
 CoinGecko 只作为币种级聚合行情兜底。使用 CoinGecko 时，页面会标注：“该数据来自第三方聚合行情，可能与具体交易所略有差异。”
 

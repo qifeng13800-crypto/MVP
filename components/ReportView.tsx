@@ -32,8 +32,14 @@ export function ReportView({
     },
     {
       label: "24小时成交量",
-      value: formatVolume(data.volume24h),
+      value: `${formatVolume(data.volume24h)} ${data.baseAsset}`,
       help: publicDataHelp,
+      icon: BarChart3
+    },
+    {
+      label: "24小时成交额",
+      value: `${formatVolume(data.quoteVolume24h)} ${data.quoteAsset}${data.quoteVolumeEstimated ? "（估算）" : ""}`,
+      help: data.quoteVolumeEstimated ? `${publicDataHelp} 该成交额由成交量和当前价格估算。` : publicDataHelp,
       icon: BarChart3
     },
     {
@@ -94,6 +100,11 @@ export function ReportView({
           {data.sourceNote && (
             <p className="mt-2 rounded-md border border-gold/45 bg-gold/10 px-3 py-2 text-xs leading-5 text-gold">
               {data.sourceNote}
+            </p>
+          )}
+          {data.source === "api" && (
+            <p className="mt-2 text-xs leading-5 text-slate-400">
+              不同平台的统计口径可能不同，本报告以当前显示的数据来源为准。
             </p>
           )}
           {data.source === "example" && (
