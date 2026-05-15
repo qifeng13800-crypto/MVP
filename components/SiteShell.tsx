@@ -4,7 +4,6 @@ import { ShieldAlert } from "lucide-react";
 const navItems = [
   { href: "/", label: "首页" },
   { href: "/report?symbol=BTCUSDT", label: "风险报告" },
-  { href: "/examples", label: "示例报告" },
   { href: "/beta", label: "内测说明" }
 ];
 

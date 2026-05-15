@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, BarChart3, ClipboardCheck, Gauge, Sparkles, ShieldCheck } from "lucide-react";
+import { ArrowRight, BarChart3, ClipboardCheck, Gauge, ShieldCheck } from "lucide-react";
 
 const quickSymbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT"];
 
@@ -80,13 +80,6 @@ export default function HomePage() {
               >
                 <ShieldCheck size={17} />
                 查看内测说明
-              </Link>
-              <Link
-                href="/examples"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-aqua/45 bg-aqua/10 px-4 text-sm font-semibold text-aqua transition hover:bg-aqua/15"
-              >
-                <Sparkles size={17} />
-                生成示例报告
               </Link>
             </div>
           </div>

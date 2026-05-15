@@ -8,20 +8,18 @@
 app/
   api/risk/route.ts      Next.js API 路由，返回风险检查报告
   beta/page.tsx          内测说明页
-  examples/page.tsx      示例报告页
   globals.css            全局样式和深色背景
   layout.tsx             全站布局、元信息、固定免责声明
   page.tsx               首页输入与卖点展示
   report/page.tsx        风险报告页
 components/
   CopyReportButton.tsx   复制报告按钮
-  ExampleCard.tsx        示例报告卡片
   MetricCard.tsx         数据指标卡片
   ReportView.tsx         风险报告主体
   RiskBadge.tsx          风险等级标签
   SiteShell.tsx          顶部导航和底部免责声明
 lib/
-  marketData.ts          合约公开行情数据入口与示例报告数据
+  marketData.ts          合约公开行情数据入口
   reportText.ts          分享文案与提醒文案生成
   risk.ts                风险等级规则和白话解释
   types.ts               TypeScript 类型
@@ -112,7 +110,7 @@ MEXC 合约行情字段：
 
 项目还提供 `/api/symbols?symbol=BTCUSDT`，用于查询 Binance U本位合约交易对是否存在和相近交易对建议。交易对列表在服务端缓存约 10 分钟。
 
-真实报告页不会使用示例价格、随机价格或旧数据兜底。示例数据只用于“示例报告页”。
+真实报告页不会使用示例价格、随机价格或旧数据兜底。
 
 ## API 失败时如何处理
 
@@ -123,7 +121,7 @@ MEXC 合约行情字段：
 - 如果三个合约数据源都暂时无法返回，页面会显示：“暂时无法获取该交易对的合约公开行情，请稍后刷新或更换交易对。”
 - 如果交易对不存在，页面会提示：“暂未找到该交易对，请检查输入是否正确。”
 - 真实报告页不会使用示例价格兜底。
-- 示例数据只用于“示例报告页”。
+- 真实查询只展示合约公开行情，不生成假报告。
 
 ## 后续如何接入更多公开数据源
 
