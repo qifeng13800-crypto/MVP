@@ -1,10 +1,10 @@
 import { ExampleCard } from "@/components/ExampleCard";
-import { createRiskReport } from "@/lib/risk";
+import { createExampleRiskReport } from "@/lib/risk";
 
 const examples = ["BTCUSDT", "ETHUSDT", "MEMEUSDT"];
 
 export default async function ExamplesPage() {
-  const reports = await Promise.all(examples.map((symbol) => createRiskReport(symbol)));
+  const reports = examples.map((symbol) => createExampleRiskReport(symbol));
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 pb-32 pt-8 sm:px-6 lg:px-8">

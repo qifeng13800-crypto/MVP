@@ -90,7 +90,7 @@ export function ReportView({
           <p className={`mt-2 inline-flex rounded-md border px-3 py-2 text-xs leading-5 ${data.source === "api" ? "border-aqua/40 bg-aqua/10 text-aqua" : "border-gold/45 bg-gold/10 text-gold"}`}>
             {data.source === "api" ? "数据来源：公开行情数据，可能存在延迟。" : "示例数据，仅用于功能演示，非实时行情。"}
           </p>
-          {data.source === "fallback" && (
+          {data.source === "example" && (
             <p className="mt-2 rounded-md border border-gold/45 bg-gold/10 px-3 py-2 text-xs font-semibold text-gold">
               当前为示例数据，非实时行情。
             </p>

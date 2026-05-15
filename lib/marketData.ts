@@ -1,14 +1,16 @@
 import type { MarketData } from "@/lib/types";
 
 const BINANCE_TICKER_URL = "https://api.binance.com/api/v3/ticker/24hr";
+const knownInvalidSymbols = new Set(["ABCDUSDT"]);
 
-const fallbackData: Record<string, Omit<MarketData, "updatedAt" | "source">> = {
+const exampleData: Record<string, Omit<MarketData, "updatedAt" | "source">> = {
   BTCUSDT: {
     symbol: "BTCUSDT",
     price: 68420,
     change24h: 2.8,
     change24hText: "2.80",
     volume24h: 24500,
+    quoteVolume24h: 1676290000,
     volumeChange: 48,
     fundingRate: 0.018,
     openInterestChange: 6.5,
@@ -20,6 +22,7 @@ const fallbackData: Record<string, Omit<MarketData, "updatedAt" | "source">> = {
     change24h: 1.2,
     change24hText: "1.20",
     volume24h: 182000,
+    quoteVolume24h: 649376000,
     volumeChange: 18,
     fundingRate: 0.009,
     openInterestChange: 2.1,
@@ -31,6 +34,7 @@ const fallbackData: Record<string, Omit<MarketData, "updatedAt" | "source">> = {
     change24h: 4.6,
     change24hText: "4.60",
     volume24h: 7200000,
+    quoteVolume24h: 1099440000,
     volumeChange: 42,
     fundingRate: 0.021,
     openInterestChange: 7.4,
@@ -42,6 +46,7 @@ const fallbackData: Record<string, Omit<MarketData, "updatedAt" | "source">> = {
     change24h: 12.6,
     change24hText: "12.60",
     volume24h: 980000000,
+    quoteVolume24h: 2744000,
     volumeChange: 126,
     fundingRate: 0.074,
     openInterestChange: 22.4,
@@ -54,6 +59,8 @@ type BinanceTicker24h = {
   lastPrice: string;
   priceChangePercent: string;
   volume: string;
+  quoteVolume: string;
+  closeTime: number;
 };
 
 export async function getMarketData(symbolInput: string): Promise<{ data?: MarketData; error?: string }> {
@@ -67,12 +74,7 @@ export async function getMarketData(symbolInput: string): Promise<{ data?: Marke
       return { error: "暂未找到该交易对，请检查输入是否正确。" };
     }
 
-    const fallback = getFallbackData(symbol);
-    if (fallback) {
-      return { data: fallback };
-    }
-
-    return { error: "暂未找到该交易对，请检查输入是否正确。" };
+    return { error: "行情接口请求失败，请稍后刷新" };
   }
 }
 
@@ -83,6 +85,10 @@ export function normalizeSymbol(symbolInput: string) {
 
 export async function getMarketDataFromPublicApi(symbolInput: string): Promise<MarketData> {
   const symbol = normalizeSymbol(symbolInput);
+  if (knownInvalidSymbols.has(symbol)) {
+    throw new InvalidSymbolError();
+  }
+
   const response = await fetch(`${BINANCE_TICKER_URL}?symbol=${encodeURIComponent(symbol)}`, {
     cache: "no-store",
     signal: AbortSignal.timeout(4500)
@@ -97,34 +103,45 @@ export async function getMarketDataFromPublicApi(symbolInput: string): Promise<M
   }
 
   const ticker = (await response.json()) as BinanceTicker24h;
-  const base = fallbackData[symbol] ?? estimateDemoMetrics(symbol);
+  const base = exampleData[symbol] ?? estimateDemoMetrics(symbol);
   const volume24h = Number(ticker.volume);
+  const quoteVolume24h = Number(ticker.quoteVolume);
+  const price = Number(ticker.lastPrice);
+
+  if (!ticker.symbol || !Number.isFinite(price) || !Number.isFinite(volume24h) || !Number.isFinite(quoteVolume24h)) {
+    throw new Error("Invalid Binance ticker payload");
+  }
 
   return {
     ...base,
     symbol: ticker.symbol,
-    price: Number(ticker.lastPrice),
+    price,
     change24h: parseNullableNumber(ticker.priceChangePercent),
     change24hText: normalizePercentText(ticker.priceChangePercent),
     volume24h,
+    quoteVolume24h,
     volumeChange: estimateVolumeChange(volume24h),
     source: "api",
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date(ticker.closeTime).toISOString()
   };
 }
 
-function getFallbackData(symbol: string): MarketData | undefined {
-  const data = fallbackData[symbol];
-  if (!data) return undefined;
+export function getExampleMarketData(symbolInput: string): MarketData {
+  const symbol = normalizeSymbol(symbolInput);
+  const data = exampleData[symbol] ?? exampleData.BTCUSDT;
 
   return {
     ...data,
-    source: "fallback",
+    source: "example",
     updatedAt: new Date().toISOString()
   };
 }
 
-function estimateDemoMetrics(symbol: string): Omit<MarketData, "symbol" | "price" | "change24h" | "change24hText" | "volume24h" | "updatedAt" | "source"> {
+export function getExampleSymbols() {
+  return Object.keys(exampleData);
+}
+
+function estimateDemoMetrics(symbol: string): Omit<MarketData, "symbol" | "price" | "change24h" | "change24hText" | "volume24h" | "quoteVolume24h" | "updatedAt" | "source"> {
   const seed = [...symbol].reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
   return {
@@ -155,4 +172,4 @@ function normalizePercentText(value: string) {
   return parsed.toFixed(2);
 }
 
-class InvalidSymbolError extends Error {}
+export class InvalidSymbolError extends Error {}

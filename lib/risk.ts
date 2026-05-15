@@ -1,4 +1,4 @@
-import { getMarketData } from "@/lib/marketData";
+import { getExampleMarketData, getMarketData } from "@/lib/marketData";
 import type { MarketData, RiskEvaluation, RiskLevel, RiskReport } from "@/lib/types";
 
 export async function createRiskReport(symbol: string): Promise<RiskReport> {
@@ -12,12 +12,13 @@ export async function createRiskReport(symbol: string): Promise<RiskReport> {
         change24h: null,
         change24hText: null,
         volume24h: 0,
+        quoteVolume24h: 0,
         volumeChange: 0,
         fundingRate: 0,
         openInterestChange: 0,
         volatility: 0,
         updatedAt: new Date().toISOString(),
-        source: "fallback"
+        source: "example"
       },
       evaluation: {
         level: "low",
@@ -32,6 +33,22 @@ export async function createRiskReport(symbol: string): Promise<RiskReport> {
   return {
     data: result.data,
     evaluation: evaluateRisk(result.data)
+  };
+}
+
+export function createRiskReportFromMarketData(data: MarketData): RiskReport {
+  return {
+    data,
+    evaluation: evaluateRisk(data)
+  };
+}
+
+export function createExampleRiskReport(symbol: string): RiskReport {
+  const data = getExampleMarketData(symbol);
+
+  return {
+    data,
+    evaluation: evaluateRisk(data)
   };
 }
 

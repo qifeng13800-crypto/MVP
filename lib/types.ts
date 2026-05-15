@@ -6,12 +6,13 @@ export type MarketData = {
   change24h: number | null;
   change24hText: string | null;
   volume24h: number;
+  quoteVolume24h: number;
   volumeChange: number;
   fundingRate: number;
   openInterestChange: number;
   volatility: number;
   updatedAt: string;
-  source: "api" | "fallback";
+  source: "api" | "example";
 };
 
 export type RiskEvaluation = {
