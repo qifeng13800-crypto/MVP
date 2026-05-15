@@ -27,6 +27,7 @@ lib/
   types.ts               TypeScript 类型
 scripts/
   check-copy.js          文案风险词检查脚本
+netlify.toml             Netlify 部署配置
 ```
 
 ## 本地运行方法
@@ -133,6 +134,35 @@ npm install
 7. 点击 Deploy。
 
 当前项目不需要配置环境变量。
+
+## Netlify 部署方法
+
+当前项目可以部署到 Netlify。项目已经包含 `netlify.toml`，Netlify 导入仓库后会读取以下配置：
+
+```toml
+[build]
+  command = "npm run build"
+  publish = ".next"
+```
+
+如果 Netlify 页面要求手动填写：
+
+- Build command：`npm run build`
+- Publish directory：`.next`
+
+部署步骤：
+
+1. 登录 Netlify。
+2. 选择 `Add new site`。
+3. 选择 `Import an existing project`。
+4. 选择 GitHub，并授权 Netlify 读取仓库。
+5. 选择这个项目仓库。
+6. Build command 填 `npm run build`。
+7. Publish directory 填 `.next`。
+8. 环境变量保持为空。
+9. 点击 `Deploy`。
+
+部署完成后，在 Netlify 的站点页面中复制以 `netlify.app` 结尾的网址即可访问。
 
 ## 测试方式
 
