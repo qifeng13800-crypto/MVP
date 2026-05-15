@@ -8,7 +8,7 @@ export type MarketData = {
   change24h: number | null;
   change24hText: string | null;
   volume24h: number;
-  quoteVolume24h: number;
+  quoteVolume24h: number | null;
   quoteVolumeEstimated?: boolean;
   volumeChange: number;
   fundingRate: number;
@@ -16,7 +16,7 @@ export type MarketData = {
   volatility: number;
   updatedAt: string;
   source: "api" | "example";
-  dataSource: "Binance U 本位合约公开行情" | "示例报告数据";
+  dataSource: "Binance U本位合约" | "OKX 永续合约" | "MEXC 合约行情" | "示例报告数据";
   sourceNote?: string;
 };
 

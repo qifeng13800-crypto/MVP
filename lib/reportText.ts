@@ -44,11 +44,11 @@ export function buildReportCopy({
 }) {
   return [
     `【交易对】${report.data.symbol}`,
-    "【数据市场】Binance U 本位合约",
+    `【数据市场】${formatDataMarket(report.data.dataSource)}`,
     `【当前价格】$${formatPrice(report.data.price)}`,
     `【24小时涨跌幅】${formatPercentText(report.data.change24hText)}`,
     `【24小时成交量】${formatVolume(report.data.volume24h)} ${report.data.baseAsset}`,
-    `【24小时成交额】${formatVolume(report.data.quoteVolume24h)} ${report.data.quoteAsset}${report.data.quoteVolumeEstimated ? "（估算）" : ""}`,
+    `【24小时成交额】${formatQuoteVolume(report.data.quoteVolume24h, report.data.quoteAsset)}`,
     `【风险等级】${levelText(report.evaluation.level)}`,
     `【一句话总结】${summary}`,
     "",
@@ -68,6 +68,18 @@ function formatVolume(value: number) {
   return value.toLocaleString("en-US", {
     maximumFractionDigits: 2
   });
+}
+
+function formatQuoteVolume(value: number | null, quoteAsset: string) {
+  if (value === null) return "该数据源未返回成交额";
+  return `${formatVolume(value)} ${quoteAsset}`;
+}
+
+function formatDataMarket(dataSource: string) {
+  if (dataSource === "Binance U本位合约") return "Binance U本位合约";
+  if (dataSource === "OKX 永续合约") return "OKX 永续合约";
+  if (dataSource === "MEXC 合约行情") return "MEXC 合约行情";
+  return dataSource;
 }
 
 function formatPrice(value: number) {

@@ -6,7 +6,7 @@ import { AlertCircle, ArrowLeft, BarChart3, ClipboardCheck, LineChart, Percent, 
 import { CopyReportButton } from "@/components/CopyReportButton";
 import { MetricCard } from "@/components/MetricCard";
 import { RiskBadge } from "@/components/RiskBadge";
-import { buildReportCopy, getRiskReminders, levelText } from "@/lib/reportText";
+import { buildReportCopy, levelText } from "@/lib/reportText";
 import type { RiskReport } from "@/lib/types";
 
 export function ReportView({
@@ -17,7 +17,6 @@ export function ReportView({
   showBackLink?: boolean;
 }) {
   const { data, evaluation } = report;
-  const publicDataHelp = data.source === "api" ? "来自公开行情接口，可能存在延迟。" : "示例数据，仅用于功能演示，非实时行情。";
   const summary = buildPlainSummary(report);
   const riskInterpretation = buildRiskInterpretation(report);
   const copyText = buildReportCopy({
@@ -46,8 +45,8 @@ export function ReportView({
     },
     {
       label: "24小时成交额",
-      value: `${formatVolume(data.quoteVolume24h)} ${data.quoteAsset}${data.quoteVolumeEstimated ? "（估算）" : ""}`,
-      help: data.quoteVolumeEstimated ? `${explainActivity(data.quoteVolume24h)} 该成交额由成交量和当前价格估算。` : explainActivity(data.quoteVolume24h),
+      value: data.quoteVolume24h === null ? "该数据源未返回成交额" : `${formatVolume(data.quoteVolume24h)} ${data.quoteAsset}`,
+      help: explainActivity(data.quoteVolume24h),
       icon: BarChart3
     }
   ];
@@ -65,7 +64,7 @@ export function ReportView({
           </Link>
         </div>
         <section className="rounded-lg border border-coral/50 bg-coral/10 p-5 text-coral shadow-softGlow">
-          <h2 className="text-xl font-semibold">暂未找到该交易对</h2>
+          <h2 className="text-xl font-semibold">{report.error.startsWith("暂未找到") ? "暂未找到该交易对" : "暂时无法获取行情"}</h2>
           <p className="mt-3 text-sm leading-6 text-slate-200">{report.error}</p>
         </section>
       </div>
@@ -82,9 +81,9 @@ export function ReportView({
           </h1>
           <p className="mt-2 text-base text-slate-300">开单前公开数据复盘与风险自查</p>
           <p className="mt-3 text-sm text-slate-400">数据更新时间：{formatDate(data.updatedAt)}</p>
-          <p className="mt-2 text-sm text-slate-300">数据来源：{data.dataSource}</p>
+          <p className="mt-2 text-sm text-slate-300">数据市场：{data.dataSource}</p>
           <p className={`mt-2 inline-flex rounded-md border px-3 py-2 text-xs leading-5 ${data.source === "api" ? "border-aqua/40 bg-aqua/10 text-aqua" : "border-gold/45 bg-gold/10 text-gold"}`}>
-            {data.source === "api" ? "数据来源：公开行情数据，可能存在延迟。" : "示例数据，仅用于功能演示，非实时行情。"}
+            {data.source === "api" ? "数据来源：合约公开行情，可能存在延迟。" : "示例数据，仅用于功能演示，非实时行情。"}
           </p>
           {data.sourceNote && (
             <p className="mt-2 rounded-md border border-gold/45 bg-gold/10 px-3 py-2 text-xs leading-5 text-gold">
@@ -255,7 +254,11 @@ function buildPlainSummary(report: RiskReport) {
 }
 
 function buildRiskInterpretation(report: RiskReport) {
-  return `当前价格为 $${formatPrice(report.data.price)}，24小时涨跌幅为 ${formatPercentText(report.data.change24hText)}，24小时成交量为 ${formatVolume(report.data.volume24h)} ${report.data.baseAsset}，24小时成交额为 ${formatVolume(report.data.quoteVolume24h)} ${report.data.quoteAsset}${report.data.quoteVolumeEstimated ? "（估算）" : ""}。这些数据只用于观察当前风险环境，不代表任何操作方向。`;
+  const quoteVolumeText = report.data.quoteVolume24h === null
+    ? "该数据源未返回成交额"
+    : `${formatVolume(report.data.quoteVolume24h)} ${report.data.quoteAsset}`;
+
+  return `当前价格为 $${formatPrice(report.data.price)}，24小时涨跌幅为 ${formatPercentText(report.data.change24hText)}，24小时成交量为 ${formatVolume(report.data.volume24h)} ${report.data.baseAsset}，24小时成交额为 ${quoteVolumeText}。这些数据只用于观察当前风险环境，不代表任何操作方向。`;
 }
 
 function explainChange(value: number | null) {
@@ -266,14 +269,16 @@ function explainChange(value: number | null) {
   return "短期波动较强，需要谨慎看待。";
 }
 
-function explainActivity(quoteVolume: number) {
+function explainActivity(quoteVolume: number | null) {
+  if (quoteVolume === null) return "该数据源未返回成交额，活跃度需要结合成交量一起观察。";
   const level = getActivityLevel(quoteVolume);
   if (level === "较低") return "成交额较低，流动性可能不足。";
   if (level === "中等") return "成交额中等，活跃度一般。";
   return "成交额较高，市场关注度较高。";
 }
 
-function getActivityLevel(quoteVolume: number) {
+function getActivityLevel(quoteVolume: number | null) {
+  if (quoteVolume === null) return "暂缺";
   if (quoteVolume < 1000000) return "较低";
   if (quoteVolume < 50000000) return "中等";
   return "较高";

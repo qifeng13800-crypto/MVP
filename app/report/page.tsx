@@ -35,7 +35,7 @@ async function createReportFromMarketApi(symbolInput: string): Promise<RiskRepor
 
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
-    return createErrorReport(symbol, body.error ?? "暂时无法获取 Binance 合约公开行情，请稍后刷新。");
+    return createErrorReport(symbol, body.error ?? "暂时无法获取该交易对的合约公开行情，请稍后刷新或更换交易对。");
   }
 
   const data = (await response.json()) as MarketData;
@@ -52,7 +52,7 @@ function createErrorReport(symbol: string, error: string): RiskReport {
       change24h: null,
       change24hText: null,
       volume24h: 0,
-      quoteVolume24h: 0,
+      quoteVolume24h: null,
       quoteVolumeEstimated: false,
       volumeChange: 0,
       fundingRate: 0,

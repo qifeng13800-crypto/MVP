@@ -21,7 +21,7 @@ components/
   RiskBadge.tsx          风险等级标签
   SiteShell.tsx          顶部导航和底部免责声明
 lib/
-  marketData.ts          公开行情数据入口与示例数据兜底
+  marketData.ts          合约公开行情数据入口与示例报告数据
   reportText.ts          分享文案与提醒文案生成
   risk.ts                风险等级规则和白话解释
   types.ts               TypeScript 类型
@@ -56,7 +56,8 @@ http://localhost:3000
 BTCUSDT
 ETHUSDT
 SOLUSDT
-MEMEUSDT
+DOGEUSDT
+SKYAIUSDT
 ```
 
 ## 打包方法
@@ -73,13 +74,19 @@ npm run start
 
 ## 当前数据来源
 
-真实报告页默认使用 Binance U 本位合约公开行情：
+真实报告页按顺序查询合约公开行情：
+
+1. Binance U本位合约
+2. OKX 永续合约
+3. MEXC 合约行情
+
+第一优先级接口：
 
 ```text
 GET https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT
 ```
 
-当前使用接口字段：
+Binance U本位合约字段：
 
 - `lastPrice`：当前价格
 - `priceChangePercent`：24 小时涨跌幅
@@ -87,20 +94,33 @@ GET https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT
 - `quoteVolume`：24 小时成交额
 - `closeTime`：数据时间
 
-项目还提供 `/api/symbols?symbol=BTCUSDT`，用于查询 Binance U 本位合约交易对是否存在和相近交易对建议。交易对列表在服务端缓存约 10 分钟。
+OKX 永续合约字段：
 
-以下字段当前仍为演示算法估算：
+- `last`：当前价格
+- `open24h`：24 小时前价格，用于计算 24 小时涨跌幅
+- `volCcy24h`：24 小时成交量
+- `volCcyQuote24h`：24 小时成交额。如果接口未返回，页面会显示“该数据源未返回成交额”。
+- `ts`：数据时间
 
-- 资金费率
-- 持仓变化
-- 短周期波动强度
+MEXC 合约行情字段：
 
-这些估算指标会在页面上标注：“该指标为演示算法估算，后续接入更多公开数据。”
+- `lastPrice`：当前价格
+- `riseFallRate`：24 小时涨跌幅
+- `volume24`：24 小时成交量
+- `amount24`：24 小时成交额
+- `timestamp`：数据时间
+
+项目还提供 `/api/symbols?symbol=BTCUSDT`，用于查询 Binance U本位合约交易对是否存在和相近交易对建议。交易对列表在服务端缓存约 10 分钟。
+
+真实报告页不会使用示例价格、随机价格或旧数据兜底。示例数据只用于“示例报告页”。
 
 ## API 失败时如何处理
 
-- 如果 Binance U 本位合约公开行情接口请求成功，报告会显示：“数据来源：Binance U 本位合约公开行情”。
-- 如果接口请求失败，页面会显示：“暂时无法获取 Binance 合约公开行情，请稍后刷新。”
+- 如果 Binance U本位合约请求成功，报告会显示：“数据市场：Binance U本位合约”。
+- 如果 Binance 请求失败，会继续请求 OKX 永续合约。
+- 如果 OKX 请求失败，会继续请求 MEXC 合约行情。
+- 如果返回 OKX 或 MEXC 数据，页面会标注：“该数据不是 Binance 合约数据，可能与 Binance 页面存在差异。”
+- 如果三个合约数据源都暂时无法返回，页面会显示：“暂时无法获取该交易对的合约公开行情，请稍后刷新或更换交易对。”
 - 如果交易对不存在，页面会提示：“暂未找到该交易对，请检查输入是否正确。”
 - 真实报告页不会使用示例价格兜底。
 - 示例数据只用于“示例报告页”。
@@ -114,7 +134,7 @@ GET https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT
 - Binance Futures 公共资金费率接口
 - Binance Futures 公共持仓量接口
 - 多周期 K 线公开数据
-- 更多公开数据源的备用行情接口
+- 更多合约公开行情接口
 
 只要返回结构仍然符合 `MarketData`，`lib/risk.ts` 和页面组件就可以继续复用。
 
