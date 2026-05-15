@@ -35,7 +35,7 @@ async function createReportFromMarketApi(symbolInput: string): Promise<RiskRepor
 
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as { error?: string };
-    return createErrorReport(symbol, body.error ?? "行情接口请求失败，请稍后刷新");
+    return createErrorReport(symbol, body.error ?? "暂时无法获取该交易对的公开行情数据，请稍后刷新或更换交易对。");
   }
 
   const data = (await response.json()) as MarketData;

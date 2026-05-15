@@ -82,7 +82,10 @@ npm run start
 2. OKX 公共行情
    GET https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT
 
-3. CoinGecko 聚合行情
+3. MEXC 公共行情
+   GET https://api.mexc.com/api/v3/ticker/24hr?symbol=BTCUSDT
+
+4. CoinGecko 聚合行情
    GET https://api.coingecko.com/api/v3/simple/price
 ```
 
@@ -103,6 +106,8 @@ OKX 当前使用接口字段：
 - `ts`：数据时间
 
 CoinGecko 只作为币种级聚合行情兜底。使用 CoinGecko 时，页面会标注：“该数据来自第三方聚合行情，可能与具体交易所略有差异。”
+
+项目还提供 `/api/symbols?symbol=BTCUSDT`，用于查询交易对是否存在和相近交易对建议。交易对列表来自 Binance、OKX、MEXC，并在服务端缓存约 10 分钟。
 
 以下字段当前仍为演示算法估算：
 

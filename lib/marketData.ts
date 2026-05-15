@@ -1,14 +1,19 @@
+import { findSimilarSymbols, findSymbolSources, getSymbolRegistry, resolveSymbol, toOkxInstId } from "@/lib/symbols";
 import type { MarketData } from "@/lib/types";
 
 const BINANCE_MARKET_DATA_URL = "https://data-api.binance.vision/api/v3/ticker/24hr";
 const OKX_TICKER_URL = "https://www.okx.com/api/v5/market/ticker";
+const MEXC_TICKER_URL = "https://api.mexc.com/api/v3/ticker/24hr";
 const COINGECKO_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price";
 
 const coinGeckoIds: Record<string, string> = {
   BTC: "bitcoin",
+  DOGE: "dogecoin",
   ETH: "ethereum",
+  MEME: "meme",
+  PEPE: "pepe",
   SOL: "solana",
-  MEME: "meme"
+  WIF: "dogwifcoin"
 };
 
 const exampleData: Record<string, Omit<MarketData, "updatedAt" | "source" | "dataSource" | "sourceNote">> = {
@@ -74,31 +79,37 @@ type BinanceTicker24h = {
 type OkxTickerResponse = {
   code: string;
   data?: Array<{
-    instId: string;
     last: string;
     open24h: string;
+    ts: string;
     vol24h: string;
     volCcy24h: string;
-    ts: string;
   }>;
 };
 
+type MexcTicker24h = {
+  symbol: string;
+  lastPrice: string;
+  priceChangePercent: string;
+  volume: string;
+  quoteVolume: string;
+  closeTime?: number;
+};
+
 type CoinGeckoResponse = Record<string, {
-  usd?: number;
-  usd_24h_vol?: number;
-  usd_24h_change?: number;
   last_updated_at?: number;
+  usd?: number;
+  usd_24h_change?: number;
+  usd_24h_vol?: number;
 }>;
 
 export async function getMarketData(symbolInput: string): Promise<{ data?: MarketData; error?: string }> {
-  const symbol = normalizeSymbol(symbolInput);
-
   try {
-    const data = await getMarketDataFromPublicApi(symbol);
+    const data = await getMarketDataFromPublicApi(symbolInput);
     return { data };
   } catch (error) {
     if (error instanceof InvalidSymbolError) {
-      return { error: "暂未找到该交易对，请检查输入是否正确。" };
+      return { error: error.message || "暂未找到该交易对，请检查输入是否正确，或尝试 BTCUSDT / ETHUSDT / SOLUSDT。" };
     }
 
     return { error: "暂时无法获取该交易对的公开行情数据，请稍后刷新或更换交易对。" };
@@ -106,29 +117,42 @@ export async function getMarketData(symbolInput: string): Promise<{ data?: Marke
 }
 
 export function normalizeSymbol(symbolInput: string) {
-  const cleaned = symbolInput.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
-  return cleaned || "BTCUSDT";
+  return resolveSymbol(symbolInput).normalized;
 }
 
 export async function getMarketDataFromPublicApi(symbolInput: string): Promise<MarketData> {
-  const symbol = normalizeSymbol(symbolInput);
+  const resolved = resolveSymbol(symbolInput);
+  const registry = await getSymbolRegistry();
+  const sources = findSymbolSources(resolved.normalized, registry);
+  const suggestions = findSimilarSymbols(resolved, registry);
   const errors: unknown[] = [];
-  let sawInvalidSymbol = false;
 
-  for (const loader of [fetchBinanceMarketData, fetchOkxMarketData, fetchCoinGeckoMarketData]) {
+  if (sources.length === 0 && !canUseCoinGecko(resolved.normalized)) {
+    throw new InvalidSymbolError(buildNotFoundMessage(suggestions));
+  }
+
+  for (const source of ["binance", "okx", "mexc"] as const) {
+    if (!sources.includes(source)) continue;
+
     try {
-      return await loader(symbol);
+      if (source === "binance") return await fetchBinanceMarketData(resolved.normalized);
+      if (source === "okx") return await fetchOkxMarketData(resolved.normalized);
+      return await fetchMexcMarketData(resolved.normalized);
     } catch (error) {
-      if (error instanceof InvalidSymbolError) {
-        sawInvalidSymbol = true;
-      } else {
-        errors.push(error);
-      }
+      errors.push(error);
     }
   }
 
-  if (sawInvalidSymbol && errors.length === 0) {
-    throw new InvalidSymbolError();
+  if (canUseCoinGecko(resolved.normalized)) {
+    try {
+      return await fetchCoinGeckoMarketData(resolved.normalized);
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  if (sources.length === 0) {
+    throw new InvalidSymbolError(buildNotFoundMessage(suggestions));
   }
 
   throw errors[0] instanceof Error ? errors[0] : new Error("All market data sources failed");
@@ -149,28 +173,19 @@ async function fetchBinanceMarketData(symbol: string): Promise<MarketData> {
   }
 
   const ticker = (await response.json()) as BinanceTicker24h;
-  const volume24h = Number(ticker.volume);
-  const quoteVolume24h = Number(ticker.quoteVolume);
-  const price = Number(ticker.lastPrice);
-
-  if (!ticker.symbol || !Number.isFinite(price) || !Number.isFinite(volume24h) || !Number.isFinite(quoteVolume24h)) {
-    throw new Error("Invalid Binance ticker payload");
-  }
-
-  return buildMarketData({
+  return buildMarketDataFromExchangeTicker({
     symbol: ticker.symbol,
-    price,
-    change24h: parseNullableNumber(ticker.priceChangePercent),
-    volume24h,
-    quoteVolume24h,
-    updatedAt: new Date(ticker.closeTime).toISOString(),
+    price: ticker.lastPrice,
+    change24h: ticker.priceChangePercent,
+    volume24h: ticker.volume,
+    quoteVolume24h: ticker.quoteVolume,
+    updatedAt: ticker.closeTime ? new Date(ticker.closeTime).toISOString() : new Date().toISOString(),
     dataSource: "Binance 公共行情"
   });
 }
 
 async function fetchOkxMarketData(symbol: string): Promise<MarketData> {
-  const instId = toOkxInstId(symbol);
-  const response = await fetch(`${OKX_TICKER_URL}?instId=${encodeURIComponent(instId)}`, {
+  const response = await fetch(`${OKX_TICKER_URL}?instId=${encodeURIComponent(toOkxInstId(symbol))}`, {
     cache: "no-store",
     signal: AbortSignal.timeout(4500)
   });
@@ -187,29 +202,49 @@ async function fetchOkxMarketData(symbol: string): Promise<MarketData> {
 
   const price = Number(ticker.last);
   const open24h = Number(ticker.open24h);
-  const volume24h = Number(ticker.vol24h);
-  const quoteVolume24h = Number(ticker.volCcy24h);
-  const timestamp = Number(ticker.ts);
   const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : null;
-
-  if (!Number.isFinite(price) || !Number.isFinite(volume24h) || !Number.isFinite(quoteVolume24h) || !Number.isFinite(timestamp)) {
-    throw new Error("Invalid OKX ticker payload");
-  }
+  const timestamp = Number(ticker.ts);
 
   return buildMarketData({
     symbol,
     price,
     change24h,
-    volume24h,
-    quoteVolume24h,
-    updatedAt: new Date(timestamp).toISOString(),
+    volume24h: Number(ticker.vol24h),
+    quoteVolume24h: Number(ticker.volCcy24h),
+    updatedAt: Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : new Date().toISOString(),
     dataSource: "OKX 公共行情"
   });
 }
 
+async function fetchMexcMarketData(symbol: string): Promise<MarketData> {
+  const response = await fetch(`${MEXC_TICKER_URL}?symbol=${encodeURIComponent(symbol)}`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(4500)
+  });
+
+  if (response.status === 400 || response.status === 404) {
+    throw new InvalidSymbolError();
+  }
+
+  if (!response.ok) {
+    throw new Error(`MEXC market data request failed: ${response.status}`);
+  }
+
+  const ticker = (await response.json()) as MexcTicker24h;
+  return buildMarketDataFromExchangeTicker({
+    symbol: ticker.symbol || symbol,
+    price: ticker.lastPrice,
+    change24h: ticker.priceChangePercent,
+    volume24h: ticker.volume,
+    quoteVolume24h: ticker.quoteVolume,
+    updatedAt: ticker.closeTime ? new Date(ticker.closeTime).toISOString() : new Date().toISOString(),
+    dataSource: "MEXC 公共行情"
+  });
+}
+
 async function fetchCoinGeckoMarketData(symbol: string): Promise<MarketData> {
-  const baseAsset = getBaseAsset(symbol);
-  const id = coinGeckoIds[baseAsset];
+  const resolved = resolveSymbol(symbol);
+  const id = coinGeckoIds[resolved.baseAsset];
   if (!id) {
     throw new InvalidSymbolError();
   }
@@ -249,7 +284,7 @@ async function fetchCoinGeckoMarketData(symbol: string): Promise<MarketData> {
     quoteVolume24h,
     updatedAt,
     dataSource: "CoinGecko 聚合行情",
-    sourceNote: "该数据来自第三方聚合行情，可能与具体交易所略有差异。"
+    sourceNote: "该数据来自第三方聚合行情，可能与具体交易所价格略有差异。"
   });
 }
 
@@ -265,8 +300,32 @@ export function getExampleMarketData(symbolInput: string): MarketData {
   };
 }
 
-export function getExampleSymbols() {
-  return Object.keys(exampleData);
+function buildMarketDataFromExchangeTicker({
+  symbol,
+  price,
+  change24h,
+  volume24h,
+  quoteVolume24h,
+  updatedAt,
+  dataSource
+}: {
+  symbol: string;
+  price: string;
+  change24h: string;
+  volume24h: string;
+  quoteVolume24h: string;
+  updatedAt: string;
+  dataSource: MarketData["dataSource"];
+}) {
+  return buildMarketData({
+    symbol,
+    price: Number(price),
+    change24h: parseNullableNumber(change24h),
+    volume24h: Number(volume24h),
+    quoteVolume24h: Number(quoteVolume24h),
+    updatedAt,
+    dataSource
+  });
 }
 
 function buildMarketData({
@@ -288,6 +347,10 @@ function buildMarketData({
   dataSource: MarketData["dataSource"];
   sourceNote?: string;
 }): MarketData {
+  if (!Number.isFinite(price) || !Number.isFinite(volume24h) || !Number.isFinite(quoteVolume24h)) {
+    throw new Error("Invalid market data payload");
+  }
+
   const base = exampleData[symbol] ?? estimateDemoMetrics(symbol);
 
   return {
@@ -306,31 +369,27 @@ function buildMarketData({
   };
 }
 
-function toOkxInstId(symbol: string) {
-  const baseAsset = getBaseAsset(symbol);
-  if (!baseAsset) {
-    throw new InvalidSymbolError();
-  }
-
-  return `${baseAsset}-USDT`;
+function canUseCoinGecko(symbol: string) {
+  const resolved = resolveSymbol(symbol);
+  return ["USDT", "USDC", "FDUSD"].includes(resolved.quoteAsset) && Boolean(coinGeckoIds[resolved.baseAsset]);
 }
 
-function getBaseAsset(symbol: string) {
-  if (!symbol.endsWith("USDT") || symbol.length <= 4) {
-    throw new InvalidSymbolError();
+function buildNotFoundMessage(suggestions: string[]) {
+  if (suggestions.length > 0) {
+    return `暂未找到该交易对，请检查输入是否正确。找到相近交易对：${suggestions.join("、")}`;
   }
 
-  return symbol.slice(0, -4);
+  return "暂未找到该交易对，请检查输入是否正确，或尝试 BTCUSDT / ETHUSDT / SOLUSDT。";
 }
 
 function estimateDemoMetrics(symbol: string): Omit<MarketData, "symbol" | "price" | "change24h" | "change24hText" | "volume24h" | "quoteVolume24h" | "updatedAt" | "source" | "dataSource" | "sourceNote"> {
   const seed = [...symbol].reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
   return {
-    volumeChange: Number((10 + (seed % 90)).toFixed(1)),
     fundingRate: Number((((seed % 150) - 55) / 1000).toFixed(3)),
     openInterestChange: Number((((seed % 360) - 130) / 10).toFixed(1)),
-    volatility: Number((2 + (seed % 85) / 10).toFixed(1))
+    volatility: Number((2 + (seed % 85) / 10).toFixed(1)),
+    volumeChange: Number((10 + (seed % 90)).toFixed(1))
   };
 }
 

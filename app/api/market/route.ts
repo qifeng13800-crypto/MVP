@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
   const result = await getMarketData(symbol);
 
   if (!result.data) {
-    const status = result.error === "暂未找到该交易对，请检查输入是否正确。" ? 404 : 502;
+    const status = result.error?.startsWith("暂未找到该交易对") ? 404 : 502;
     return NextResponse.json({ error: result.error }, { status });
   }
 
