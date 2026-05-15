@@ -85,11 +85,6 @@ export function ReportView({
           <p className={`mt-2 inline-flex rounded-md border px-3 py-2 text-xs leading-5 ${data.source === "api" ? "border-aqua/40 bg-aqua/10 text-aqua" : "border-gold/45 bg-gold/10 text-gold"}`}>
             {data.source === "api" ? "数据来源：合约公开行情，可能存在延迟。" : "示例数据，仅用于功能演示，非实时行情。"}
           </p>
-          {data.sourceNote && (
-            <p className="mt-2 rounded-md border border-gold/45 bg-gold/10 px-3 py-2 text-xs leading-5 text-gold">
-              {data.sourceNote}
-            </p>
-          )}
           {data.source === "api" && (
             <p className="mt-2 text-xs leading-5 text-slate-400">
               不同平台的统计口径可能不同，本报告以当前显示的数据来源为准。
