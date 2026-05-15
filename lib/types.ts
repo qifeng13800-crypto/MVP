@@ -1,4 +1,5 @@
 export type RiskLevel = "low" | "medium" | "high";
+export type MarketSource = "binance" | "okx" | "mexc";
 
 export type MarketData = {
   baseAsset: string;
@@ -16,7 +17,7 @@ export type MarketData = {
   volatility: number;
   updatedAt: string;
   source: "api" | "example";
-  dataSource: "Binance U本位合约" | "OKX 永续合约" | "MEXC 合约行情" | "示例报告数据";
+  dataSource: "Binance U 本位合约" | "OKX 永续合约" | "MEXC 合约行情" | "示例报告数据";
   sourceNote?: string;
 };
 

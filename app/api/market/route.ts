@@ -6,7 +6,8 @@ export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   const symbol = request.nextUrl.searchParams.get("symbol") ?? "BTCUSDT";
-  const result = await getMarketData(symbol);
+  const market = request.nextUrl.searchParams.get("market") ?? "binance";
+  const result = await getMarketData(symbol, market);
 
   if (!result.data) {
     const status = result.error?.startsWith("暂未找到该交易对") ? 404 : 502;

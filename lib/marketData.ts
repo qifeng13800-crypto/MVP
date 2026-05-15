@@ -1,14 +1,7 @@
 import { resolveSymbol } from "@/lib/symbols";
-import type { MarketData } from "@/lib/types";
+import type { MarketData, MarketSource } from "@/lib/types";
 
-const BINANCE_FUTURES_TICKER_URLS = [
-  "https://fapi.binance.com/fapi/v1/ticker/24hr",
-  "https://fapi1.binance.com/fapi/v1/ticker/24hr",
-  "https://fapi2.binance.com/fapi/v1/ticker/24hr",
-  "https://fapi3.binance.com/fapi/v1/ticker/24hr",
-  "https://fapi4.binance.com/fapi/v1/ticker/24hr"
-];
-
+const BINANCE_FUTURES_TICKER_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr";
 const OKX_SWAP_TICKER_URL = "https://www.okx.com/api/v5/market/ticker";
 const MEXC_CONTRACT_TICKER_URL = "https://contract.mexc.com/api/v1/contract/ticker";
 
@@ -75,6 +68,12 @@ const exampleData: Record<string, Omit<MarketData, "updatedAt" | "source" | "dat
   }
 };
 
+export const marketLabels: Record<MarketSource, MarketData["dataSource"]> = {
+  binance: "Binance U 本位合约",
+  okx: "OKX 永续合约",
+  mexc: "MEXC 合约行情"
+};
+
 type BinanceFuturesTicker24h = {
   closeTime?: number;
   lastPrice?: string;
@@ -109,14 +108,26 @@ type MexcContractTickerResponse = {
   success?: boolean;
 };
 
-type SourceAttempt = {
-  name: string;
-  load: () => Promise<MarketData>;
+type RequestDebug = {
+  error?: string;
+  ok: boolean;
+  raw?: unknown;
 };
 
-export async function getMarketData(symbolInput: string): Promise<{ data?: MarketData; error?: string }> {
+export function normalizeSymbol(symbolInput: string) {
+  return resolveSymbol(symbolInput).normalized;
+}
+
+export function normalizeMarketSource(input?: string | null): MarketSource {
+  if (input === "okx" || input === "mexc") return input;
+  return "binance";
+}
+
+export async function getMarketData(symbolInput: string, marketInput?: string | null): Promise<{ data?: MarketData; error?: string }> {
+  const market = normalizeMarketSource(marketInput);
+
   try {
-    const data = await getMarketDataFromPublicApi(symbolInput);
+    const data = await getMarketDataFromPublicApi(symbolInput, market);
     return { data };
   } catch (error) {
     if (error instanceof InvalidSymbolError) {
@@ -127,59 +138,21 @@ export async function getMarketData(symbolInput: string): Promise<{ data?: Marke
       return { error: "该数据源暂未返回完整行情字段，请更换交易对或稍后刷新。" };
     }
 
-    return { error: "暂时无法获取该交易对的合约公开行情，请稍后刷新或更换交易对。" };
+    if (market === "binance") {
+      return { error: "暂时无法获取 Binance U 本位合约公开行情，请稍后刷新。" };
+    }
+
+    return { error: `暂时无法获取${marketLabels[market]}公开行情，请稍后刷新。` };
   }
 }
 
-export function normalizeSymbol(symbolInput: string) {
-  return resolveSymbol(symbolInput).normalized;
-}
+export async function getMarketDataFromPublicApi(symbolInput: string, marketInput?: string | null): Promise<MarketData> {
+  const symbol = normalizeSymbol(symbolInput);
+  const market = normalizeMarketSource(marketInput);
 
-export async function getMarketDataFromPublicApi(symbolInput: string): Promise<MarketData> {
-  const resolved = resolveSymbol(symbolInput);
-  const attempts: SourceAttempt[] = [
-    {
-      name: "Binance U本位合约",
-      load: () => fetchBinanceFuturesMarketData(resolved.normalized)
-    },
-    {
-      name: "OKX 永续合约",
-      load: () => fetchOkxSwapMarketData(resolved.normalized)
-    },
-    {
-      name: "MEXC 合约行情",
-      load: () => fetchMexcContractMarketData(resolved.normalized)
-    }
-  ];
-  let sawTemporaryFailure = false;
-  let sawIncompleteData = false;
-
-  for (const attempt of attempts) {
-    try {
-      return await attempt.load();
-    } catch (error) {
-      if (error instanceof IncompleteMarketDataError) {
-        sawIncompleteData = true;
-        continue;
-      }
-
-      if (error instanceof InvalidSymbolError) {
-        continue;
-      }
-
-      sawTemporaryFailure = true;
-    }
-  }
-
-  if (sawTemporaryFailure) {
-    throw new Error("All futures market data sources failed");
-  }
-
-  if (sawIncompleteData) {
-    throw new IncompleteMarketDataError();
-  }
-
-  throw new InvalidSymbolError();
+  if (market === "okx") return fetchOkxSwapMarketData(symbol);
+  if (market === "mexc") return fetchMexcContractMarketData(symbol);
+  return fetchBinanceFuturesMarketData(symbol);
 }
 
 export function getExampleMarketData(symbolInput: string): MarketData {
@@ -194,37 +167,92 @@ export function getExampleMarketData(symbolInput: string): MarketData {
   };
 }
 
+export async function getMarketDebug(symbolInput: string) {
+  const symbol = normalizeSymbol(symbolInput);
+  const [binance, okx, mexc] = await Promise.all([
+    inspectBinanceFutures(symbol),
+    inspectOkxSwap(symbol),
+    inspectMexcContract(symbol)
+  ]);
+
+  return {
+    symbol,
+    finalDataSource: binance.ok ? marketLabels.binance : "未生成报告",
+    binanceFutures: binance,
+    okxSwap: okx,
+    mexcContract: mexc
+  };
+}
+
 async function fetchBinanceFuturesMarketData(symbol: string) {
-  let lastError: unknown;
-
-  for (const url of BINANCE_FUTURES_TICKER_URLS) {
-    try {
-      const response = await fetch(`${url}?symbol=${encodeURIComponent(symbol)}`, {
-        cache: "no-store",
-        signal: AbortSignal.timeout(9000)
-      });
-
-      if (response.status === 400 || response.status === 404) {
-        throw new InvalidSymbolError();
-      }
-
-      if (!response.ok) {
-        lastError = new Error(`Binance futures request failed: ${response.status}`);
-        continue;
-      }
-
-      const ticker = (await response.json()) as BinanceFuturesTicker24h;
-      return buildMarketDataFromBinanceFutures(ticker);
-    } catch (error) {
-      if (error instanceof InvalidSymbolError) throw error;
-      lastError = error;
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error("Binance futures request failed");
+  const ticker = await requestBinanceFuturesTicker(symbol);
+  return buildMarketDataFromBinanceFutures(ticker);
 }
 
 async function fetchOkxSwapMarketData(symbol: string) {
+  const ticker = await requestOkxSwapTicker(symbol);
+  return buildMarketDataFromOkxSwap(symbol, ticker);
+}
+
+async function fetchMexcContractMarketData(symbol: string) {
+  const ticker = await requestMexcContractTicker(symbol);
+  return buildMarketDataFromMexcContract(symbol, ticker);
+}
+
+async function inspectBinanceFutures(symbol: string): Promise<RequestDebug> {
+  try {
+    const ticker = await requestBinanceFuturesTicker(symbol);
+    return {
+      ok: true,
+      raw: {
+        closeTime: ticker.closeTime,
+        lastPrice: ticker.lastPrice,
+        priceChangePercent: ticker.priceChangePercent,
+        quoteVolume: ticker.quoteVolume,
+        volume: ticker.volume
+      }
+    };
+  } catch (error) {
+    return { ok: false, error: getErrorMessage(error) };
+  }
+}
+
+async function inspectOkxSwap(symbol: string): Promise<RequestDebug> {
+  try {
+    const ticker = await requestOkxSwapTicker(symbol);
+    return { ok: true, raw: ticker };
+  } catch (error) {
+    return { ok: false, error: getErrorMessage(error) };
+  }
+}
+
+async function inspectMexcContract(symbol: string): Promise<RequestDebug> {
+  try {
+    const ticker = await requestMexcContractTicker(symbol);
+    return { ok: true, raw: ticker };
+  } catch (error) {
+    return { ok: false, error: getErrorMessage(error) };
+  }
+}
+
+async function requestBinanceFuturesTicker(symbol: string): Promise<BinanceFuturesTicker24h> {
+  const response = await fetch(`${BINANCE_FUTURES_TICKER_URL}?symbol=${encodeURIComponent(symbol)}`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(9000)
+  });
+
+  if (response.status === 400 || response.status === 404) {
+    throw new InvalidSymbolError();
+  }
+
+  if (!response.ok) {
+    throw new Error(`Binance futures request failed: ${response.status}`);
+  }
+
+  return (await response.json()) as BinanceFuturesTicker24h;
+}
+
+async function requestOkxSwapTicker(symbol: string) {
   const resolved = resolveSymbol(symbol);
   const instId = `${resolved.baseAsset}-${resolved.quoteAsset}-SWAP`;
   const response = await fetch(`${OKX_SWAP_TICKER_URL}?instId=${encodeURIComponent(instId)}`, {
@@ -243,10 +271,10 @@ async function fetchOkxSwapMarketData(symbol: string) {
     throw new InvalidSymbolError();
   }
 
-  return buildMarketDataFromOkxSwap(symbol, ticker);
+  return ticker;
 }
 
-async function fetchMexcContractMarketData(symbol: string) {
+async function requestMexcContractTicker(symbol: string) {
   const resolved = resolveSymbol(symbol);
   const mexcSymbol = `${resolved.baseAsset}_${resolved.quoteAsset}`;
   const response = await fetch(`${MEXC_CONTRACT_TICKER_URL}?symbol=${encodeURIComponent(mexcSymbol)}`, {
@@ -263,7 +291,7 @@ async function fetchMexcContractMarketData(symbol: string) {
     throw new InvalidSymbolError();
   }
 
-  return buildMarketDataFromMexcContract(symbol, payload.data);
+  return payload.data;
 }
 
 function buildMarketDataFromBinanceFutures(ticker: BinanceFuturesTicker24h): MarketData {
@@ -281,7 +309,7 @@ function buildMarketDataFromBinanceFutures(ticker: BinanceFuturesTicker24h): Mar
   return buildMarketData({
     baseAsset: resolved.baseAsset,
     change24h,
-    dataSource: "Binance U本位合约",
+    dataSource: marketLabels.binance,
     price,
     quoteAsset: resolved.quoteAsset,
     quoteVolume24h,
@@ -291,7 +319,7 @@ function buildMarketDataFromBinanceFutures(ticker: BinanceFuturesTicker24h): Mar
   });
 }
 
-function buildMarketDataFromOkxSwap(symbol: string, ticker: NonNullable<OkxTickerResponse["data"]>[number]): MarketData {
+function buildMarketDataFromOkxSwap(symbol: string, ticker: Awaited<ReturnType<typeof requestOkxSwapTicker>>): MarketData {
   const resolved = resolveSymbol(symbol);
   const price = Number(ticker.last);
   const open24h = Number(ticker.open24h);
@@ -307,18 +335,18 @@ function buildMarketDataFromOkxSwap(symbol: string, ticker: NonNullable<OkxTicke
   return buildMarketData({
     baseAsset: resolved.baseAsset,
     change24h,
-    dataSource: "OKX 永续合约",
+    dataSource: marketLabels.okx,
     price,
     quoteAsset: resolved.quoteAsset,
     quoteVolume24h: Number.isFinite(quoteVolume24h) ? quoteVolume24h : null,
-    sourceNote: "该数据不是 Binance 合约数据，可能与 Binance 页面存在差异。",
+    sourceNote: "当前数据不是 Binance 合约数据，可能与 Binance 页面存在差异。",
     symbol: resolved.normalized,
     updatedAt: ticker.ts ? new Date(Number(ticker.ts)).toISOString() : new Date().toISOString(),
     volume24h
   });
 }
 
-function buildMarketDataFromMexcContract(symbol: string, ticker: NonNullable<MexcContractTickerResponse["data"]>): MarketData {
+function buildMarketDataFromMexcContract(symbol: string, ticker: Awaited<ReturnType<typeof requestMexcContractTicker>>): MarketData {
   const resolved = resolveSymbol(symbol);
   const price = Number(ticker.lastPrice);
   const volume24h = Number(ticker.volume24);
@@ -332,11 +360,11 @@ function buildMarketDataFromMexcContract(symbol: string, ticker: NonNullable<Mex
   return buildMarketData({
     baseAsset: resolved.baseAsset,
     change24h: riseFallRate * 100,
-    dataSource: "MEXC 合约行情",
+    dataSource: marketLabels.mexc,
     price,
     quoteAsset: resolved.quoteAsset,
     quoteVolume24h: Number.isFinite(quoteVolume24h) ? quoteVolume24h : null,
-    sourceNote: "该数据不是 Binance 合约数据，可能与 Binance 页面存在差异。",
+    sourceNote: "当前数据不是 Binance 合约数据，可能与 Binance 页面存在差异。",
     symbol: resolved.normalized,
     updatedAt: ticker.timestamp ? new Date(Number(ticker.timestamp)).toISOString() : new Date().toISOString(),
     volume24h
@@ -404,6 +432,13 @@ function estimateVolumeChange(quoteVolume24h: number | null) {
   if (quoteVolume24h >= 100000000) return 58;
   if (quoteVolume24h >= 10000000) return 36;
   return 18;
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof InvalidSymbolError) return "交易对不存在";
+  if (error instanceof IncompleteMarketDataError) return "行情字段不完整";
+  if (error instanceof Error) return error.message;
+  return "请求失败";
 }
 
 export class InvalidSymbolError extends Error {}

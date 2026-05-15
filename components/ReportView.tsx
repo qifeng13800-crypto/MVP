@@ -1,19 +1,26 @@
 "use client";
 
-import { useMemo } from "react";
 import Link from "next/link";
 import { AlertCircle, ArrowLeft, BarChart3, ClipboardCheck, LineChart, Percent, RefreshCw } from "lucide-react";
 import { CopyReportButton } from "@/components/CopyReportButton";
 import { MetricCard } from "@/components/MetricCard";
 import { RiskBadge } from "@/components/RiskBadge";
 import { buildReportCopy, levelText } from "@/lib/reportText";
-import type { RiskReport } from "@/lib/types";
+import type { MarketSource, RiskReport } from "@/lib/types";
+
+const marketOptions: Array<{ label: string; value: MarketSource }> = [
+  { label: "Binance U 本位合约", value: "binance" },
+  { label: "OKX 永续合约", value: "okx" },
+  { label: "MEXC 合约行情", value: "mexc" }
+];
 
 export function ReportView({
   report,
+  selectedMarket = "binance",
   showBackLink = false
 }: {
   report: RiskReport;
+  selectedMarket?: MarketSource;
   showBackLink?: boolean;
 }) {
   const { data, evaluation } = report;
@@ -50,6 +57,8 @@ export function ReportView({
       icon: BarChart3
     }
   ];
+  const marketHref = (market: MarketSource) => `/report?symbol=${data.symbol}&market=${market}`;
+
   if (report.error) {
     return (
       <div>
@@ -57,6 +66,7 @@ export function ReportView({
           <div>
             <p className="text-sm font-medium text-aqua">风险检查报告</p>
             <h1 className="mt-2 break-words text-3xl font-semibold text-white sm:text-4xl">{data.symbol}</h1>
+            <MarketSelector selectedMarket={selectedMarket} symbol={data.symbol} />
           </div>
           <Link href="/" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm text-slate-200 hover:border-aqua">
             <ArrowLeft size={17} />
@@ -66,6 +76,16 @@ export function ReportView({
         <section className="rounded-lg border border-coral/50 bg-coral/10 p-5 text-coral shadow-softGlow">
           <h2 className="text-xl font-semibold">{report.error.startsWith("暂未找到") ? "暂未找到该交易对" : "暂时无法获取行情"}</h2>
           <p className="mt-3 text-sm leading-6 text-slate-200">{report.error}</p>
+          {selectedMarket === "binance" && !report.error.startsWith("暂未找到") && (
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <Link href={marketHref("okx")} className="inline-flex min-h-11 items-center justify-center rounded-md border border-gold/50 bg-gold/10 px-4 text-sm font-semibold text-gold transition hover:bg-gold/15">
+                查看其他平台数据
+              </Link>
+              <Link href={marketHref("mexc")} className="inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-bg/50 px-4 text-sm font-semibold text-slate-100 transition hover:border-aqua">
+                查看 MEXC 合约行情
+              </Link>
+            </div>
+          )}
         </section>
       </div>
     );
@@ -81,10 +101,16 @@ export function ReportView({
           </h1>
           <p className="mt-2 text-base text-slate-300">开单前公开数据复盘与风险自查</p>
           <p className="mt-3 text-sm text-slate-400">数据更新时间：{formatDate(data.updatedAt)}</p>
-          <p className="mt-2 text-sm text-slate-300">数据市场：{data.dataSource}</p>
+          <MarketSelector selectedMarket={selectedMarket} symbol={data.symbol} />
+          <p className="mt-3 text-sm text-slate-300">当前数据市场：{data.dataSource}</p>
           <p className={`mt-2 inline-flex rounded-md border px-3 py-2 text-xs leading-5 ${data.source === "api" ? "border-aqua/40 bg-aqua/10 text-aqua" : "border-gold/45 bg-gold/10 text-gold"}`}>
             {data.source === "api" ? "数据来源：合约公开行情，可能存在延迟。" : "示例数据，仅用于功能演示，非实时行情。"}
           </p>
+          {selectedMarket !== "binance" && (
+            <p className="mt-2 rounded-md border border-gold/50 bg-gold/10 px-3 py-2 text-xs font-semibold leading-5 text-gold">
+              当前数据不是 Binance 合约数据，可能与 Binance 页面存在差异。
+            </p>
+          )}
           {data.source === "api" && (
             <p className="mt-2 text-xs leading-5 text-slate-400">
               不同平台的统计口径可能不同，本报告以当前显示的数据来源为准。
@@ -98,7 +124,7 @@ export function ReportView({
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <CopyReportButton text={copyText} />
-          <Link href={`/report?symbol=${data.symbol}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-200 hover:border-aqua">
+          <Link href={marketHref(selectedMarket)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border px-4 text-sm font-semibold text-slate-200 hover:border-aqua">
             <RefreshCw size={17} />
             刷新数据
           </Link>
@@ -177,7 +203,7 @@ export function ReportView({
             开单前提醒
           </h2>
           <div className="mt-4 space-y-3">
-            {["当前是否因为短期波动而冲动？", "是否能接受反向波动？", "是否已经确认数据来源？"].map((item) => (
+            {["当前波动是否明显放大？", "成交额是否足够支撑流动性？", "是否确认当前数据来源？"].map((item) => (
               <div key={item} className="flex gap-3 rounded-md border border-border bg-bg/70 p-3 text-sm leading-6 text-slate-200">
                 <AlertCircle className="mt-0.5 shrink-0 text-aqua" size={17} />
                 <span>{item}</span>
@@ -185,6 +211,38 @@ export function ReportView({
             ))}
           </div>
         </section>
+      </div>
+    </div>
+  );
+}
+
+function MarketSelector({
+  selectedMarket,
+  symbol
+}: {
+  selectedMarket: MarketSource;
+  symbol: string;
+}) {
+  return (
+    <div className="mt-4">
+      <p className="text-sm text-slate-300">数据市场：</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {marketOptions.map((item) => {
+          const active = item.value === selectedMarket;
+          return (
+            <Link
+              key={item.value}
+              href={`/report?symbol=${symbol}&market=${item.value}`}
+              className={`inline-flex min-h-10 items-center rounded-md border px-3 text-sm font-semibold transition ${
+                active
+                  ? "border-aqua bg-aqua text-bg"
+                  : "border-border bg-surface/80 text-slate-200 hover:border-aqua hover:text-white"
+              }`}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
       </div>
     </div>
   );

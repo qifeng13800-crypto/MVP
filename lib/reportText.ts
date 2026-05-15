@@ -76,7 +76,7 @@ function formatQuoteVolume(value: number | null, quoteAsset: string) {
 }
 
 function formatDataMarket(dataSource: string) {
-  if (dataSource === "Binance U本位合约") return "Binance U本位合约";
+  if (dataSource === "Binance U 本位合约") return "Binance U 本位合约";
   if (dataSource === "OKX 永续合约") return "OKX 永续合约";
   if (dataSource === "MEXC 合约行情") return "MEXC 合约行情";
   return dataSource;
