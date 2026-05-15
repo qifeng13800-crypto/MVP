@@ -16,7 +16,7 @@ export type MarketData = {
   volatility: number;
   updatedAt: string;
   source: "api" | "example";
-  dataSource: "Binance 公共行情" | "OKX 公共行情" | "MEXC 公共行情" | "CoinGecko 聚合行情" | "示例报告数据";
+  dataSource: "Binance U 本位合约公开行情" | "示例报告数据";
   sourceNote?: string;
 };
 

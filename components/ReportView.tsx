@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
-import { Activity, ArrowLeft, BarChart3, ClipboardCheck, Gauge, LineChart, Percent, RefreshCw, Waves } from "lucide-react";
+import { AlertCircle, ArrowLeft, BarChart3, ClipboardCheck, LineChart, Percent, RefreshCw } from "lucide-react";
 import { CopyReportButton } from "@/components/CopyReportButton";
 import { MetricCard } from "@/components/MetricCard";
 import { RiskBadge } from "@/components/RiskBadge";
@@ -17,23 +17,13 @@ export function ReportView({
   showBackLink?: boolean;
 }) {
   const { data, evaluation } = report;
-  const reminders = getRiskReminders(report);
   const publicDataHelp = data.source === "api" ? "来自公开行情接口，可能存在延迟。" : "示例数据，仅用于功能演示，非实时行情。";
-  const estimatedDataHelp = "演示算法估算，后续接入更多公开数据。";
-  const checklistItems = useMemo(() => normalizeChecklist(evaluation.checklist), [evaluation.checklist]);
-  const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
-  const completedCount = checklistItems.filter((item) => checkedItems[item]).length;
-  const totalCount = checklistItems.length;
-  const uncheckedCount = totalCount - completedCount;
   const summary = buildPlainSummary(report);
   const riskInterpretation = buildRiskInterpretation(report);
-  const selfCheckWarning = completedCount < 4 ? "你还有多个关键问题未确认，建议先完成风险自查。" : "";
   const copyText = buildReportCopy({
-    completedCount,
     report,
-    riskInterpretation: selfCheckWarning ? `${riskInterpretation}\n${selfCheckWarning}` : riskInterpretation,
-    summary,
-    totalCount
+    riskInterpretation,
+    summary
   });
   const metricCards = [
     {
@@ -61,12 +51,6 @@ export function ReportView({
       icon: BarChart3
     }
   ];
-  const estimatedCards = [
-    { label: "资金费率", value: `${data.fundingRate.toFixed(3)}%`, icon: Gauge },
-    { label: "持仓变化", value: formatPercent(data.openInterestChange), icon: Activity },
-    { label: "短周期波动强度", value: data.volatility.toFixed(1), icon: Waves }
-  ];
-
   if (report.error) {
     return (
       <div>
@@ -145,7 +129,6 @@ export function ReportView({
           </div>
           <div className="max-w-2xl text-base leading-7 text-slate-200 sm:text-lg">
             <p>{riskInterpretation}</p>
-            {selfCheckWarning && <p className="mt-3 text-gold">{selfCheckWarning}</p>}
           </div>
         </div>
       </section>
@@ -172,7 +155,7 @@ export function ReportView({
             </span>
           </div>
           <div className="mt-5 space-y-3">
-            {reminders.map((item, index) => (
+            {[summary, "请确认数据来源与自己对比的平台一致。", "本报告仅用于风险复盘，不代表任何操作方向。"].map((item, index) => (
               <div key={item} className="rounded-md border border-border bg-bg/70 p-3 text-sm leading-6 text-slate-200">
                 {index + 1}. {item}
               </div>
@@ -188,7 +171,7 @@ export function ReportView({
         <section className="rounded-lg border border-border bg-surface/85 p-5">
           <h2 className="text-xl font-semibold text-white">风险解释</h2>
           <div className="mt-4 space-y-3 text-sm leading-7 text-slate-300">
-            {[...evaluation.explainList, ...(selfCheckWarning ? [selfCheckWarning] : [])].map((item) => (
+            {evaluation.explainList.map((item) => (
               <p key={item}>{item}</p>
             ))}
           </div>
@@ -197,47 +180,18 @@ export function ReportView({
         <section className="rounded-lg border border-border bg-surface/85 p-5">
           <h2 className="flex items-center gap-2 text-xl font-semibold text-white">
             <ClipboardCheck className="text-aqua" size={22} />
-            开单前自查清单
+            开单前提醒
           </h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-md border border-aqua/35 bg-aqua/10 p-3 text-sm text-aqua">
-              自查完成度：{completedCount}/{totalCount}
-            </div>
-            <div className="rounded-md border border-gold/35 bg-gold/10 p-3 text-sm text-gold">
-              未确认风险点 {uncheckedCount} 个
-            </div>
-          </div>
           <div className="mt-4 space-y-3">
-            {checklistItems.map((item) => (
-              <label key={item} className="flex gap-3 rounded-md border border-border bg-bg/70 p-3 text-sm leading-6 text-slate-200">
-                <input
-                  type="checkbox"
-                  checked={Boolean(checkedItems[item])}
-                  onChange={(event) => setCheckedItems((current) => ({ ...current, [item]: event.target.checked }))}
-                  className="mt-1 h-4 w-4 shrink-0 rounded border-border accent-aqua"
-                />
+            {["当前是否因为短期波动而冲动？", "是否能接受反向波动？", "是否已经确认数据来源？"].map((item) => (
+              <div key={item} className="flex gap-3 rounded-md border border-border bg-bg/70 p-3 text-sm leading-6 text-slate-200">
+                <AlertCircle className="mt-0.5 shrink-0 text-aqua" size={17} />
                 <span>{item}</span>
-              </label>
+              </div>
             ))}
           </div>
         </section>
       </div>
-
-      <section className="mt-5 rounded-lg border border-border bg-surface/70 p-5">
-        <h2 className="text-lg font-semibold text-white">演示算法估算</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-400">以下为演示算法估算，后续接入更多公开数据。</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {estimatedCards.map(({ label, value, icon: Icon }) => (
-            <div key={label} className="rounded-md border border-border bg-bg/60 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm text-slate-400">{label}</p>
-                <Icon className="text-aqua" size={18} />
-              </div>
-              <p className="mt-2 text-lg font-semibold text-white">{value}</p>
-            </div>
-          ))}
-        </div>
-      </section>
     </div>
   );
 }
@@ -285,31 +239,19 @@ function formatDate(value: string) {
   });
 }
 
-function normalizeChecklist(items: string[]) {
-  const defaults = [
-    "我是否写下了这次开单的理由？",
-    "我是否知道自己最多能承受多少亏损？",
-    "我是否检查了更高周期走势和近期公开信息？",
-    "我是否确认当前不是被焦虑、兴奋或不甘心推动？",
-    "我是否准备好把这次结果记录到学习记录里？",
-    "我是否确认这次操作符合自己的计划？"
-  ];
-  return [...items, ...defaults].filter((item, index, list) => list.indexOf(item) === index).slice(0, 6);
-}
-
 function buildPlainSummary(report: RiskReport) {
   const changeAbs = Math.abs(report.data.change24h ?? 0);
   const activity = getActivityLevel(report.data.quoteVolume24h);
 
   if (changeAbs > 8) {
-    return `当前短期波动较强，成交活跃度${activity}，建议先完成风险自查，避免情绪化操作。`;
+    return `当前短期波动较强，成交活跃度${activity}，本报告仅用于风险复盘，不代表任何操作方向。`;
   }
 
   if (changeAbs >= 3) {
-    return `当前波动开始明显，成交活跃度${activity}，建议把风险点逐项确认后再继续。`;
+    return `当前波动开始明显，成交活跃度${activity}，本报告仅用于风险复盘，不代表任何操作方向。`;
   }
 
-  return `当前波动不算极端，成交活跃度${activity}，建议先完成风险自查，避免情绪化操作。`;
+  return `当前波动不算极端，成交活跃度${activity}，本报告仅用于风险复盘，不代表任何操作方向。`;
 }
 
 function buildRiskInterpretation(report: RiskReport) {
