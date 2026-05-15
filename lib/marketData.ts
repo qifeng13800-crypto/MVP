@@ -1,9 +1,17 @@
 import type { MarketData } from "@/lib/types";
 
-const BINANCE_TICKER_URL = "https://api.binance.com/api/v3/ticker/24hr";
-const knownInvalidSymbols = new Set(["ABCDUSDT"]);
+const BINANCE_MARKET_DATA_URL = "https://data-api.binance.vision/api/v3/ticker/24hr";
+const OKX_TICKER_URL = "https://www.okx.com/api/v5/market/ticker";
+const COINGECKO_PRICE_URL = "https://api.coingecko.com/api/v3/simple/price";
 
-const exampleData: Record<string, Omit<MarketData, "updatedAt" | "source">> = {
+const coinGeckoIds: Record<string, string> = {
+  BTC: "bitcoin",
+  ETH: "ethereum",
+  SOL: "solana",
+  MEME: "meme"
+};
+
+const exampleData: Record<string, Omit<MarketData, "updatedAt" | "source" | "dataSource" | "sourceNote">> = {
   BTCUSDT: {
     symbol: "BTCUSDT",
     price: 68420,
@@ -63,6 +71,25 @@ type BinanceTicker24h = {
   closeTime: number;
 };
 
+type OkxTickerResponse = {
+  code: string;
+  data?: Array<{
+    instId: string;
+    last: string;
+    open24h: string;
+    vol24h: string;
+    volCcy24h: string;
+    ts: string;
+  }>;
+};
+
+type CoinGeckoResponse = Record<string, {
+  usd?: number;
+  usd_24h_vol?: number;
+  usd_24h_change?: number;
+  last_updated_at?: number;
+}>;
+
 export async function getMarketData(symbolInput: string): Promise<{ data?: MarketData; error?: string }> {
   const symbol = normalizeSymbol(symbolInput);
 
@@ -74,7 +101,7 @@ export async function getMarketData(symbolInput: string): Promise<{ data?: Marke
       return { error: "暂未找到该交易对，请检查输入是否正确。" };
     }
 
-    return { error: "行情接口请求失败，请稍后刷新" };
+    return { error: "暂时无法获取该交易对的公开行情数据，请稍后刷新或更换交易对。" };
   }
 }
 
@@ -85,11 +112,30 @@ export function normalizeSymbol(symbolInput: string) {
 
 export async function getMarketDataFromPublicApi(symbolInput: string): Promise<MarketData> {
   const symbol = normalizeSymbol(symbolInput);
-  if (knownInvalidSymbols.has(symbol)) {
+  const errors: unknown[] = [];
+  let sawInvalidSymbol = false;
+
+  for (const loader of [fetchBinanceMarketData, fetchOkxMarketData, fetchCoinGeckoMarketData]) {
+    try {
+      return await loader(symbol);
+    } catch (error) {
+      if (error instanceof InvalidSymbolError) {
+        sawInvalidSymbol = true;
+      } else {
+        errors.push(error);
+      }
+    }
+  }
+
+  if (sawInvalidSymbol && errors.length === 0) {
     throw new InvalidSymbolError();
   }
 
-  const response = await fetch(`${BINANCE_TICKER_URL}?symbol=${encodeURIComponent(symbol)}`, {
+  throw errors[0] instanceof Error ? errors[0] : new Error("All market data sources failed");
+}
+
+async function fetchBinanceMarketData(symbol: string): Promise<MarketData> {
+  const response = await fetch(`${BINANCE_MARKET_DATA_URL}?symbol=${encodeURIComponent(symbol)}`, {
     cache: "no-store",
     signal: AbortSignal.timeout(4500)
   });
@@ -99,11 +145,10 @@ export async function getMarketDataFromPublicApi(symbolInput: string): Promise<M
   }
 
   if (!response.ok) {
-    throw new Error(`Binance request failed: ${response.status}`);
+    throw new Error(`Binance market data request failed: ${response.status}`);
   }
 
   const ticker = (await response.json()) as BinanceTicker24h;
-  const base = exampleData[symbol] ?? estimateDemoMetrics(symbol);
   const volume24h = Number(ticker.volume);
   const quoteVolume24h = Number(ticker.quoteVolume);
   const price = Number(ticker.lastPrice);
@@ -112,18 +157,100 @@ export async function getMarketDataFromPublicApi(symbolInput: string): Promise<M
     throw new Error("Invalid Binance ticker payload");
   }
 
-  return {
-    ...base,
+  return buildMarketData({
     symbol: ticker.symbol,
     price,
     change24h: parseNullableNumber(ticker.priceChangePercent),
-    change24hText: normalizePercentText(ticker.priceChangePercent),
     volume24h,
     quoteVolume24h,
-    volumeChange: estimateVolumeChange(volume24h),
-    source: "api",
-    updatedAt: new Date(ticker.closeTime).toISOString()
-  };
+    updatedAt: new Date(ticker.closeTime).toISOString(),
+    dataSource: "Binance 公共行情"
+  });
+}
+
+async function fetchOkxMarketData(symbol: string): Promise<MarketData> {
+  const instId = toOkxInstId(symbol);
+  const response = await fetch(`${OKX_TICKER_URL}?instId=${encodeURIComponent(instId)}`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(4500)
+  });
+
+  if (!response.ok) {
+    throw new Error(`OKX market data request failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as OkxTickerResponse;
+  const ticker = payload.data?.[0];
+  if (payload.code !== "0" || !ticker) {
+    throw new InvalidSymbolError();
+  }
+
+  const price = Number(ticker.last);
+  const open24h = Number(ticker.open24h);
+  const volume24h = Number(ticker.vol24h);
+  const quoteVolume24h = Number(ticker.volCcy24h);
+  const timestamp = Number(ticker.ts);
+  const change24h = open24h > 0 ? ((price - open24h) / open24h) * 100 : null;
+
+  if (!Number.isFinite(price) || !Number.isFinite(volume24h) || !Number.isFinite(quoteVolume24h) || !Number.isFinite(timestamp)) {
+    throw new Error("Invalid OKX ticker payload");
+  }
+
+  return buildMarketData({
+    symbol,
+    price,
+    change24h,
+    volume24h,
+    quoteVolume24h,
+    updatedAt: new Date(timestamp).toISOString(),
+    dataSource: "OKX 公共行情"
+  });
+}
+
+async function fetchCoinGeckoMarketData(symbol: string): Promise<MarketData> {
+  const baseAsset = getBaseAsset(symbol);
+  const id = coinGeckoIds[baseAsset];
+  if (!id) {
+    throw new InvalidSymbolError();
+  }
+
+  const params = new URLSearchParams({
+    ids: id,
+    vs_currencies: "usd",
+    include_24hr_vol: "true",
+    include_24hr_change: "true",
+    include_last_updated_at: "true"
+  });
+  const response = await fetch(`${COINGECKO_PRICE_URL}?${params.toString()}`, {
+    cache: "no-store",
+    signal: AbortSignal.timeout(4500)
+  });
+
+  if (!response.ok) {
+    throw new Error(`CoinGecko request failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as CoinGeckoResponse;
+  const item = payload[id];
+  const price = item?.usd;
+  const quoteVolume24h = item?.usd_24h_vol ?? 0;
+  const volume24h = price && price > 0 ? quoteVolume24h / price : 0;
+  const updatedAt = item?.last_updated_at ? new Date(item.last_updated_at * 1000).toISOString() : new Date().toISOString();
+
+  if (!price || !Number.isFinite(price)) {
+    throw new InvalidSymbolError();
+  }
+
+  return buildMarketData({
+    symbol,
+    price,
+    change24h: typeof item?.usd_24h_change === "number" ? item.usd_24h_change : null,
+    volume24h,
+    quoteVolume24h,
+    updatedAt,
+    dataSource: "CoinGecko 聚合行情",
+    sourceNote: "该数据来自第三方聚合行情，可能与具体交易所略有差异。"
+  });
 }
 
 export function getExampleMarketData(symbolInput: string): MarketData {
@@ -133,6 +260,7 @@ export function getExampleMarketData(symbolInput: string): MarketData {
   return {
     ...data,
     source: "example",
+    dataSource: "示例报告数据",
     updatedAt: new Date().toISOString()
   };
 }
@@ -141,7 +269,61 @@ export function getExampleSymbols() {
   return Object.keys(exampleData);
 }
 
-function estimateDemoMetrics(symbol: string): Omit<MarketData, "symbol" | "price" | "change24h" | "change24hText" | "volume24h" | "quoteVolume24h" | "updatedAt" | "source"> {
+function buildMarketData({
+  symbol,
+  price,
+  change24h,
+  volume24h,
+  quoteVolume24h,
+  updatedAt,
+  dataSource,
+  sourceNote
+}: {
+  symbol: string;
+  price: number;
+  change24h: number | null;
+  volume24h: number;
+  quoteVolume24h: number;
+  updatedAt: string;
+  dataSource: MarketData["dataSource"];
+  sourceNote?: string;
+}): MarketData {
+  const base = exampleData[symbol] ?? estimateDemoMetrics(symbol);
+
+  return {
+    ...base,
+    symbol,
+    price,
+    change24h,
+    change24hText: normalizePercentNumber(change24h),
+    volume24h,
+    quoteVolume24h,
+    volumeChange: estimateVolumeChange(volume24h),
+    source: "api",
+    dataSource,
+    sourceNote,
+    updatedAt
+  };
+}
+
+function toOkxInstId(symbol: string) {
+  const baseAsset = getBaseAsset(symbol);
+  if (!baseAsset) {
+    throw new InvalidSymbolError();
+  }
+
+  return `${baseAsset}-USDT`;
+}
+
+function getBaseAsset(symbol: string) {
+  if (!symbol.endsWith("USDT") || symbol.length <= 4) {
+    throw new InvalidSymbolError();
+  }
+
+  return symbol.slice(0, -4);
+}
+
+function estimateDemoMetrics(symbol: string): Omit<MarketData, "symbol" | "price" | "change24h" | "change24hText" | "volume24h" | "quoteVolume24h" | "updatedAt" | "source" | "dataSource" | "sourceNote"> {
   const seed = [...symbol].reduce((sum, char) => sum + char.charCodeAt(0), 0);
 
   return {
@@ -165,11 +347,9 @@ function parseNullableNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function normalizePercentText(value: string) {
-  if (!value) return null;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return null;
-  return parsed.toFixed(2);
+function normalizePercentNumber(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return null;
+  return value.toFixed(2);
 }
 
 export class InvalidSymbolError extends Error {}

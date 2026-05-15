@@ -56,7 +56,8 @@ function createErrorReport(symbol: string, error: string): RiskReport {
       openInterestChange: 0,
       volatility: 0,
       updatedAt: new Date().toISOString(),
-      source: "example"
+      source: "example",
+      dataSource: "示例报告数据"
     },
     evaluation: {
       level: "low",

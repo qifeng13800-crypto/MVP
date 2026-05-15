@@ -39,6 +39,7 @@ export function buildReportCopy(report: RiskReport) {
   return [
     `【交易对】${report.data.symbol}`,
     `【风险等级】${levelText(report.evaluation.level)}`,
+    `【数据来源】${report.data.dataSource}`,
     "【真实公开行情数据】",
     `当前价格：$${formatPrice(report.data.price)}`,
     `24小时涨跌幅：${formatPercentText(report.data.change24hText)}`,

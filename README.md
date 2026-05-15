@@ -73,17 +73,36 @@ npm run start
 
 ## 当前数据来源
 
-真实公开行情字段来自 Binance Spot 公开只读接口：
+真实公开行情按以下顺序请求公开只读接口：
 
 ```text
-GET https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT
+1. Binance Market Data Only
+   GET https://data-api.binance.vision/api/v3/ticker/24hr?symbol=BTCUSDT
+
+2. OKX 公共行情
+   GET https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT
+
+3. CoinGecko 聚合行情
+   GET https://api.coingecko.com/api/v3/simple/price
 ```
 
-当前使用接口字段：
+Binance 当前使用接口字段：
 
 - `lastPrice`：当前价格
 - `priceChangePercent`：24 小时涨跌幅
 - `volume`：24 小时成交量
+- `quoteVolume`：24 小时成交额
+- `closeTime`：数据时间
+
+OKX 当前使用接口字段：
+
+- `last`：当前价格
+- `open24h`：24 小时前价格
+- `vol24h`：24 小时基础币成交量
+- `volCcy24h`：24 小时计价成交额
+- `ts`：数据时间
+
+CoinGecko 只作为币种级聚合行情兜底。使用 CoinGecko 时，页面会标注：“该数据来自第三方聚合行情，可能与具体交易所略有差异。”
 
 以下字段当前仍为演示算法估算：
 
@@ -96,7 +115,7 @@ GET https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT
 ## API 失败时如何处理
 
 - 如果 Binance 公共行情接口请求成功，报告会显示：“数据来源：公开行情数据，可能存在延迟。”
-- 如果真实报告页的行情接口请求失败，页面会显示：“行情接口请求失败，请稍后刷新”。
+- 如果所有公开行情接口都请求失败，页面会显示：“暂时无法获取该交易对的公开行情数据，请稍后刷新或更换交易对。”
 - 如果交易对不存在，页面会提示：“暂未找到该交易对，请检查输入是否正确。”
 - 真实报告页不会使用示例价格兜底。
 - 示例数据只用于“示例报告页”。

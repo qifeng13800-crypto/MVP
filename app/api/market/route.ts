@@ -19,7 +19,9 @@ export async function GET(request: NextRequest) {
     priceChangePercent: result.data.change24hText,
     volume: result.data.volume24h,
     quoteVolume: result.data.quoteVolume24h,
-    closeTime: new Date(result.data.updatedAt).getTime()
+    closeTime: new Date(result.data.updatedAt).getTime(),
+    dataSource: result.data.dataSource,
+    sourceNote: result.data.sourceNote
   }, {
     headers: {
       "Cache-Control": "no-store"
