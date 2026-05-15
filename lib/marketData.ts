@@ -1,7 +1,13 @@
 import { resolveSymbol } from "@/lib/symbols";
 import type { MarketData } from "@/lib/types";
 
-const BINANCE_FUTURES_TICKER_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr";
+const BINANCE_FUTURES_TICKER_URLS = [
+  "https://fapi.binance.com/fapi/v1/ticker/24hr",
+  "https://fapi1.binance.com/fapi/v1/ticker/24hr",
+  "https://fapi2.binance.com/fapi/v1/ticker/24hr",
+  "https://fapi3.binance.com/fapi/v1/ticker/24hr",
+  "https://fapi4.binance.com/fapi/v1/ticker/24hr"
+];
 
 const exampleData: Record<string, Omit<MarketData, "updatedAt" | "source" | "dataSource" | "sourceNote">> = {
   BTCUSDT: {
@@ -98,21 +104,37 @@ export function normalizeSymbol(symbolInput: string) {
 
 export async function getMarketDataFromPublicApi(symbolInput: string): Promise<MarketData> {
   const resolved = resolveSymbol(symbolInput);
-  const response = await fetch(`${BINANCE_FUTURES_TICKER_URL}?symbol=${encodeURIComponent(resolved.normalized)}`, {
-    cache: "no-store",
-    signal: AbortSignal.timeout(6000)
-  });
-
-  if (response.status === 400 || response.status === 404) {
-    throw new InvalidSymbolError();
-  }
-
-  if (!response.ok) {
-    throw new Error(`Binance futures request failed: ${response.status}`);
-  }
-
-  const ticker = (await response.json()) as BinanceFuturesTicker24h;
+  const ticker = await fetchBinanceFuturesTicker(resolved.normalized);
   return buildMarketDataFromFuturesTicker(ticker);
+}
+
+async function fetchBinanceFuturesTicker(symbol: string): Promise<BinanceFuturesTicker24h> {
+  let lastError: unknown;
+
+  for (const url of BINANCE_FUTURES_TICKER_URLS) {
+    try {
+      const response = await fetch(`${url}?symbol=${encodeURIComponent(symbol)}`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(9000)
+      });
+
+      if (response.status === 400 || response.status === 404) {
+        throw new InvalidSymbolError();
+      }
+
+      if (!response.ok) {
+        lastError = new Error(`Binance futures request failed: ${response.status}`);
+        continue;
+      }
+
+      return (await response.json()) as BinanceFuturesTicker24h;
+    } catch (error) {
+      if (error instanceof InvalidSymbolError) throw error;
+      lastError = error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Binance futures request failed");
 }
 
 export function getExampleMarketData(symbolInput: string): MarketData {
